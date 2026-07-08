@@ -475,6 +475,7 @@ const Win7 = {
           window.send({ type: 'processes' });
           window.send({ type: 'services' });
           window.send({ type: 'dashboard' });
+          window.send({ type: 'network' });
         }
         break;
       case 'services':
@@ -601,10 +602,14 @@ const Win7 = {
       '<button class="win7-tab active" data-tab="processes">Processes</button>',
       '<button class="win7-tab" data-tab="perf">Performance</button>',
       '<button class="win7-tab" data-tab="services">Services</button>',
+      '<button class="win7-tab" data-tab="networking">Networking</button>',
+      '<button class="win7-tab" data-tab="users">Users</button>',
       '</div>',
       '<div class="win7-tab-body active" id="win7-tab-processes"><div id="win7-procs-container" style="height:100%;overflow:auto"><div style="padding:16px;text-align:center;color:rgba(255,255,255,0.4)">Loading...</div></div></div>',
       '<div class="win7-tab-body" id="win7-tab-perf"><div id="win7-perf-container" style="height:100%;overflow:auto;display:flex;flex-wrap:wrap;gap:10px;padding:8px"><div style="text-align:center;width:100%;color:rgba(255,255,255,0.4)">Loading...</div></div></div>',
       '<div class="win7-tab-body" id="win7-tab-services"><div id="win7-svcs-container" style="height:100%;overflow:auto"><div style="padding:16px;text-align:center;color:rgba(255,255,255,0.4)">Loading...</div></div></div>',
+      '<div class="win7-tab-body" id="win7-tab-networking"><div id="win7-net-container" style="height:100%;overflow:auto"><div style="padding:16px;text-align:center;color:rgba(255,255,255,0.4)">Loading...</div></div></div>',
+      '<div class="win7-tab-body" id="win7-tab-users"><div id="win7-users-container" style="height:100%;overflow:auto"><div style="padding:16px;text-align:center;color:rgba(255,255,255,0.4)">Loading...</div></div></div>',
     ].join('');
   },
 
@@ -746,17 +751,22 @@ const Win7 = {
       if (this.active && this.windows.dashboard && window.send) {
         window.send({ type: 'dashboard' });
       }
-    }, 5000);
+    }, 3000);
     this.refreshTimers.processes = setInterval(() => {
       if (this.active && this.windows.taskmgr && window.send) {
         window.send({ type: 'processes' });
       }
-    }, 5000);
+    }, 2000);
     this.refreshTimers.services = setInterval(() => {
       if (this.active && (this.windows.taskmgr || this.windows.services) && window.send) {
         window.send({ type: 'services' });
       }
-    }, 8000);
+    }, 10000);
+    this.refreshTimers.network = setInterval(() => {
+      if (this.active && this.windows.taskmgr && window.send) {
+        window.send({ type: 'network' });
+      }
+    }, 5000);
   },
 
   _stopRefreshTimers() {
@@ -773,7 +783,30 @@ const Win7 = {
       case 'files': this.renderFiles(m); break;
       case 'processes': this.renderProcesses(m); break;
       case 'services': this.renderServices(m); break;
+      case 'network': this.renderNetwork(m); break;
+      case 'cmdout': this.renderCmdOut(m); break;
     }
+  },
+
+  renderCmdOut(m) {
+    if (!this.active) return;
+    const container = document.getElementById('win7-users-container');
+    if (!container) return;
+    const parts = (m.data || '').split('---\n');
+    const who = (parts[0] || '').trim();
+    const user = (parts[1] || '').trim();
+    const boot = (parts[2] || '').trim();
+    let h = '<div style="padding:12px;font-size:12px;color:rgba(255,255,255,0.7)">';
+    h += '<div style="margin-bottom:8px"><strong>Current User:</strong> ' + this.esc(user) + '</div>';
+    if (boot) h += '<div style="margin-bottom:8px"><strong>System Boot:</strong> ' + this.esc(boot) + '</div>';
+    if (who) {
+      h += '<div style="font-size:9px;text-transform:uppercase;letter-spacing:0.5px;color:rgba(255,255,255,0.4);margin-bottom:4px;margin-top:8px">Active Sessions</div>';
+      h += '<pre style="font-size:11px;font-family:monospace;color:rgba(255,255,255,0.5);margin:0">' + this.esc(who) + '</pre>';
+    } else {
+      h += '<div style="color:rgba(255,255,255,0.3)">No other active sessions</div>';
+    }
+    h += '</div>';
+    container.innerHTML = h;
   },
 
   renderDash(d) {
@@ -1005,6 +1038,10 @@ const Win7 = {
     const container = document.getElementById('win7-perf-container');
     if (!container || !d) return;
 
+    if (!this._perfHistory) this._perfHistory = [];
+    this._perfHistory.push({ cpu: d.cpuLoad || 0, mem: d.memUsage || 0, time: Date.now() });
+    if (this._perfHistory.length > 60) this._perfHistory.shift();
+
     const circ = 2 * Math.PI * 32;
     const gauge = (lbl, pct, sub, color) => {
       const off = circ * (1 - Math.min(pct || 0, 100) / 100);
@@ -1019,6 +1056,23 @@ const Win7 = {
         + '<div style="font-size:9px;color:rgba(255,255,255,0.4);font-family:monospace">' + this.esc(d.memory || '') + '</div></div>';
     };
 
+    const historyChart = () => {
+      const h = this._perfHistory || [];
+      const w = 200, hh = 50;
+      const cpuPts = h.map((p, i) => `${i / (h.length - 1) * w},${hh - p.cpu / 100 * hh}`).join(' ');
+      const memPts = h.map((p, i) => `${i / (h.length - 1) * w},${hh - p.mem / 100 * hh}`).join(' ');
+      return '<div style="background:rgba(0,0,0,0.2);border:1px solid rgba(255,255,255,0.06);border-radius:6px;padding:8px;width:100%">'
+        + '<div style="font-size:9px;text-transform:uppercase;letter-spacing:0.5px;color:rgba(255,255,255,0.4);margin-bottom:4px">CPU / Memory History (60s)</div>'
+        + '<svg width="100%" height="60" viewBox="0 0 ' + w + ' ' + hh + '" preserveAspectRatio="none" style="display:block">'
+        + '<polyline points="' + cpuPts + '" fill="none" stroke="#3fb950" stroke-width="1.5" opacity="0.8"/>'
+        + '<polyline points="' + memPts + '" fill="none" stroke="#58a6ff" stroke-width="1.5" opacity="0.8"/>'
+        + '</svg>'
+        + '<div style="display:flex;justify-content:space-between;font-size:8px;color:rgba(255,255,255,0.3);margin-top:2px">'
+        + '<span>\u25CF CPU (' + (h.length ? h[h.length - 1].cpu.toFixed(1) : '0') + '%)</span>'
+        + '<span>\u25CF Memory (' + (h.length ? h[h.length - 1].mem.toFixed(1) : '0') + '%)</span>'
+        + '</div></div>';
+    };
+
     const infoCard = (lbl, val) => '<div style="flex:1;min-width:100px;background:rgba(0,0,0,0.2);border:1px solid rgba(255,255,255,0.06);border-radius:6px;padding:8px 10px">'
       + '<div style="font-size:8px;text-transform:uppercase;letter-spacing:0.4px;color:rgba(255,255,255,0.4);margin-bottom:2px">' + lbl + '</div>'
       + '<div style="font-size:11px;font-weight:600;font-family:monospace">' + this.esc(val) + '</div></div>';
@@ -1028,7 +1082,8 @@ const Win7 = {
       + gauge('Memory', d.memUsage, '', '#58a6ff')
       + gauge('Disk (/)', parseFloat(d.diskUsage || 0), '', '#d29922')
       + '</div>'
-      + '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;width:100%">'
+      + historyChart()
+      + '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px;width:100%">'
       + infoCard('Hostname', d.hostname || '-')
       + infoCard('Platform', d.platform || '-')
       + infoCard('Kernel', d.release || '-')
@@ -1050,6 +1105,29 @@ const Win7 = {
     }
 
     container.innerHTML = html;
+  },
+
+  renderNetwork(m) {
+    if (!this.windows.taskmgr) return;
+    const container = document.getElementById('win7-net-container');
+    if (!container) return;
+    const ifaces = m.interfaces || [];
+    let h = '<table class="tbl" style="width:100%;border-collapse:collapse;font-size:11px">'
+      + '<thead><tr>'
+      + '<th style="padding:4px 8px;text-align:left;font-size:9px;color:rgba(255,255,255,0.5);background:rgba(0,0,0,0.2);position:sticky;top:0">Interface</th>'
+      + '<th style="padding:4px 8px;text-align:right;font-size:9px;color:rgba(255,255,255,0.5);background:rgba(0,0,0,0.2);position:sticky;top:0">Received</th>'
+      + '<th style="padding:4px 8px;text-align:right;font-size:9px;color:rgba(255,255,255,0.5);background:rgba(0,0,0,0.2);position:sticky;top:0">Sent</th>'
+      + '</tr></thead><tbody>';
+    for (const i of ifaces) {
+      h += '<tr><td style="padding:3px 8px;border-bottom:1px solid rgba(255,255,255,0.03);font-family:monospace">' + this.esc(i.name) + '</td>'
+        + '<td style="padding:3px 8px;border-bottom:1px solid rgba(255,255,255,0.03);text-align:right;font-family:monospace;font-size:10px">' + this.fmtSize(i.rx) + '</td>'
+        + '<td style="padding:3px 8px;border-bottom:1px solid rgba(255,255,255,0.03);text-align:right;font-family:monospace;font-size:10px">' + this.fmtSize(i.tx) + '</td></tr>';
+    }
+    h += '</tbody></table>';
+    if (m.ips && m.ips.length) {
+      h += '<div style="padding:6px 8px;font-size:10px;color:rgba(255,255,255,0.4)">IP: ' + m.ips.join(', ') + '</div>';
+    }
+    container.innerHTML = h || '<div style="padding:16px;text-align:center;color:rgba(255,255,255,0.4)">No network interfaces</div>';
   },
 
   esc(s) {
@@ -1382,6 +1460,15 @@ overlay.addEventListener('mousedown', (e) => {
       if (body) body.classList.add('active');
       if (tab.dataset.tab === 'perf' && window.send) {
         window.send({ type: 'dashboard' });
+      }
+      if (tab.dataset.tab === 'networking' && window.send) {
+        window.send({ type: 'network' });
+      }
+      if (tab.dataset.tab === 'users') {
+        const container = document.getElementById('win7-users-container');
+        if (container && window.send) {
+          window.send({ type: 'cmd', command: 'who -u 2>/dev/null | head -20; echo "---"; whoami 2>/dev/null; echo "---"; uptime -s 2>/dev/null' });
+        }
       }
     }
     return;

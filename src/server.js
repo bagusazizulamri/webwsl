@@ -227,6 +227,24 @@ wss.on('connection', (ws) => {
         case 'services':
           getServices().then(list => send(ws, { type: 'services', list }));
           break;
+        case 'network':
+          exec('ip -4 addr show 2>/dev/null | grep inet | head -10; echo "---"; cat /proc/net/dev 2>/dev/null | tail -n+3 | head -10', { timeout: 5000, maxBuffer: 32768 }, (err, out) => {
+            if (err || !out) { send(ws, { type: 'network', interfaces: [] }); return; }
+            const parts = out.split('---\n').map(s => s.trim());
+            const ipLines = (parts[0] || '').split('\n').filter(Boolean);
+            const devLines = (parts[1] || '').split('\n').filter(Boolean);
+            const ips = [];
+            ipLines.forEach(line => {
+              const m = line.match(/inet\s+(\S+)/);
+              if (m) ips.push(m[1]);
+            });
+            const interfaces = devLines.map(line => {
+              const p = line.trim().split(/\s+/);
+              return { name: p[0]?.replace(':', '') || '', rx: parseInt(p[1]) || 0, tx: parseInt(p[9]) || 0 };
+            }).filter(i => i.name);
+            send(ws, { type: 'network', interfaces, ips });
+          });
+          break;
         case 'close': killTerminal(msg.id); break;
         case 'kill':
           exec('kill ' + msg.pid, { timeout: 3000 }, (err) => {
