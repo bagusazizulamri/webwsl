@@ -167,7 +167,11 @@
     <button class="win7-start-btn" id="win7-start-btn">&#x229E;</button>
     <div class="win7-taskbar-windows" id="win7-taskbar-windows"></div>
     <div class="win7-tray" id="win7-tray">
-      <span class="win7-tray-item" id="win7-clock"></span>
+      <span class="win7-tray-item" id="win7-tray-network" title="Network: Connected">&#x1F4F6;</span>
+      <span class="win7-tray-item" id="win7-tray-volume" title="Volume: 100%">&#x1F50A;</span>
+      <span class="win7-tray-item" id="win7-tray-power" title="Power: AC">&#x26A1;</span>
+      <span class="win7-tray-item" id="win7-tray-action" title="No issues">&#x2691;</span>
+      <span class="win7-tray-clock" id="win7-clock"></span>
     </div>
     <button class="win7-show-desktop" id="win7-show-desktop" title="Show Desktop">&#x25AC;</button>
   </div>
@@ -180,6 +184,19 @@
         <div class="win7-start-item" data-app="files">&#x1F4C1; Files</div>
         <div class="win7-start-item" data-app="taskmgr">&#x2699; Task Manager</div>
         <div class="win7-start-item" data-app="services">&#x1F527; Services</div>
+        <div class="win7-start-sep"></div>
+        <div class="win7-start-item all-programs" data-action="all-programs">&#x25BC; All Programs</div>
+        <div class="win7-all-programs-wrap" id="win7-all-programs">
+          <div class="win7-start-item" data-app="terminal">&#x26A1; Command Prompt</div>
+          <div class="win7-start-item" data-app="dashboard">&#x1F4CA; System Dashboard</div>
+          <div class="win7-start-item" data-app="files">&#x1F4C1; File Explorer</div>
+          <div class="win7-start-item" data-app="taskmgr">&#x2699; Task Manager</div>
+          <div class="win7-start-item" data-app="services">&#x1F527; Services</div>
+          <div class="win7-start-sep"></div>
+          <div class="win7-start-item" data-app="panel">&#x2699; Control Panel</div>
+          <div class="win7-start-item" data-app="computer">&#x1F4BB; Computer</div>
+          <div class="win7-start-item" data-app="devices">&#x1F4F1; Devices</div>
+        </div>
       </div>
       <div class="win7-start-right">
         <div class="win7-start-item" data-shortcut="computer">&#x1F4BB; Computer</div>
@@ -193,6 +210,18 @@
       <div class="win7-start-search"><input type="text" placeholder="Search programs and files..." id="win7-search-input"></div>
       <button class="win7-start-shutdown" id="win7-start-shutdown" title="Exit Win7 Mode">&#x23FB;</button>
     </div>
+  </div>
+
+  <div class="win7-context-menu taskbar-ctx" id="win7-taskbar-ctx">
+    <div class="win7-ctx-item" data-action="cascade">Cascade windows</div>
+    <div class="win7-ctx-item" data-action="stack">Show windows stacked</div>
+    <div class="win7-ctx-item" data-action="side">Show windows side by side</div>
+    <div class="win7-ctx-sep"></div>
+    <div class="win7-ctx-item" data-action="show-desktop">Show the desktop</div>
+    <div class="win7-ctx-sep"></div>
+    <div class="win7-ctx-item" data-action="taskmgr">Task Manager</div>
+    <div class="win7-ctx-sep"></div>
+    <div class="win7-ctx-item" data-action="properties">Properties</div>
   </div>
 </div>
 

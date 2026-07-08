@@ -24,6 +24,7 @@ const Win7 = {
     document.body.style.overflow = 'hidden';
     this.updateClock();
     this.clockInterval = setInterval(() => this.updateClock(), 1000);
+    this.updateTray();
     this.openApp('dashboard');
     this.openApp('terminal');
     this._startTerminalWatcher();
@@ -218,6 +219,17 @@ const Win7 = {
     el.textContent = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
   },
 
+  updateTray() {
+    const n = document.getElementById('win7-tray-network');
+    const v = document.getElementById('win7-tray-volume');
+    const p = document.getElementById('win7-tray-power');
+    const a = document.getElementById('win7-tray-action');
+    if (n) { n.title = 'Network: Connected'; n.textContent = '\u{1F4F6}'; }
+    if (v) { v.title = 'Volume: 100%'; v.textContent = '\u{1F50A}'; }
+    if (p) { p.title = 'Power: AC'; p.textContent = '\u26A1'; }
+    if (a) { a.title = 'No issues'; a.textContent = '\u2691'; }
+  },
+
   toggleStartMenu() {
     this.startMenuOpen = !this.startMenuOpen;
     document.getElementById('win7-start-menu').classList.toggle('active', this.startMenuOpen);
@@ -358,6 +370,67 @@ const Win7 = {
       '<div class="win7-tab-body" id="win7-tab-perf"><div id="win7-perf-container" style="height:100%;overflow:auto;display:flex;flex-wrap:wrap;gap:10px;padding:8px"><div style="text-align:center;width:100%;color:rgba(255,255,255,0.4)">Loading...</div></div></div>',
       '<div class="win7-tab-body" id="win7-tab-services"><div id="win7-svcs-container" style="height:100%;overflow:auto"><div style="padding:16px;text-align:center;color:rgba(255,255,255,0.4)">Loading...</div></div></div>',
     ].join('');
+  },
+
+  focusDesktopIcon(el, e) {
+    if (!e.ctrlKey) {
+      document.querySelectorAll('.win7-desktop-icon.selected').forEach(i => i.classList.remove('selected'));
+    }
+    el.classList.add('selected');
+    if (e.detail === 2) {
+      const sc = el.dataset.shortcut;
+      if (sc === 'computer') Win7.openApp('computer');
+      else if (sc === 'files') Win7.openApp('files');
+      else if (sc === 'recycle') {
+        Win7.createWindow({
+          id: 'recycle-' + Date.now(), title: 'Recycle Bin', icon: '\u{1F5D1}',
+          width: 400, height: 260,
+          content: '<div style="padding:40px;text-align:center;color:rgba(255,255,255,0.4);font-size:48px;line-height:1">\u{1F5D1}</div><div style="text-align:center;color:rgba(255,255,255,0.4)">Recycle Bin is empty</div>',
+        });
+      }
+    }
+  },
+
+  initDesktopIconDrag(e, el) {
+    if (e.button !== 0) return;
+    const rect = el.getBoundingClientRect();
+    el._dragData = {
+      startX: e.clientX, startY: e.clientY,
+      origL: rect.left, origT: rect.top,
+      moved: false,
+    };
+    el.style.position = 'fixed';
+    el.style.left = rect.left + 'px';
+    el.style.top = rect.top + 'px';
+    el.style.zIndex = 10050;
+    const onMove = (ev) => {
+      const d = el._dragData;
+      if (!d) return;
+      if (!d.moved && (Math.abs(ev.clientX - d.startX) > 4 || Math.abs(ev.clientY - d.startY) > 4)) {
+        d.moved = true;
+      }
+      if (d.moved) {
+        el.style.left = (d.origL + ev.clientX - d.startX) + 'px';
+        el.style.top = (d.origT + ev.clientY - d.startY) + 'px';
+      }
+    };
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      const d = el._dragData;
+      if (d && d.moved) {
+        el.style.position = '';
+        el.style.left = '';
+        el.style.top = '';
+        el.style.zIndex = '';
+        const icons = document.querySelector('.win7-desktop-icons');
+        if (icons) icons.appendChild(el);
+      }
+      delete el._dragData;
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+    e.preventDefault();
   },
 
   showDesktop() {
@@ -971,6 +1044,37 @@ overlay.addEventListener('mousedown', (e) => {
     return;
   }
 
+  /* ── System Tray ── */
+  const trayItem = e.target.closest('.win7-tray-item');
+  if (trayItem) {
+    const id = trayItem.id;
+    if (id === 'win7-tray-network') {
+      Win7.createWindow({
+        id: 'network-' + Date.now(), title: 'Network and Sharing Center', icon: '\u{1F4F6}',
+        width: 400, height: 250,
+        content: '<div style="padding:24px;text-align:center;color:rgba(255,255,255,0.6)"><div style="font-size:36px;margin-bottom:8px">\u{1F4F6}</div><div>Connected to: WebWSL Network</div><div style="font-size:10px;color:rgba(255,255,255,0.3);margin-top:8px">IPv4: 10.0.0.2 &middot; Speed: 1 Gbps</div></div>',
+      });
+    } else if (id === 'win7-tray-volume') {
+      const vol = trayItem.title === 'Volume: 100%' ? 50 : 100;
+      trayItem.title = 'Volume: ' + vol + '%';
+      trayItem.textContent = vol > 50 ? '\u{1F50A}' : '\u{1F509}';
+    } else if (id === 'win7-tray-power') {
+      trayItem.title = 'Power Options';
+      Win7.createWindow({
+        id: 'power-' + Date.now(), title: 'Power Options', icon: '\u26A1',
+        width: 360, height: 220,
+        content: '<div style="padding:20px;text-align:center;color:rgba(255,255,255,0.6)"><div style="font-size:32px;margin-bottom:8px">\u26A1</div><div>Power Source: AC</div><div style="font-size:10px;color:rgba(255,255,255,0.3);margin-top:8px">Battery: Not detected</div></div>',
+      });
+    } else if (id === 'win7-tray-action') {
+      Win7.createWindow({
+        id: 'action-' + Date.now(), title: 'Action Center', icon: '\u2691',
+        width: 380, height: 240,
+        content: '<div style="padding:24px;text-align:center;color:rgba(255,255,255,0.6)"><div style="font-size:28px;margin-bottom:8px">\u2713</div><div>No issues detected</div><div style="font-size:10px;color:rgba(255,255,255,0.3);margin-top:8px">Action Center is monitoring your system</div></div>',
+      });
+    }
+    return;
+  }
+
   /* ── Start Menu ── */
   if (e.target.closest('.win7-start-btn')) {
     Win7.toggleStartMenu();
@@ -982,6 +1086,15 @@ overlay.addEventListener('mousedown', (e) => {
     const app = startItem.dataset.app;
     const shortcut = startItem.dataset.shortcut;
     const action = startItem.dataset.action;
+    if (action === 'all-programs') {
+      const wrap = document.getElementById('win7-all-programs');
+      const arrow = startItem.querySelector('.arrow') || startItem;
+      if (wrap) {
+        wrap.classList.toggle('open');
+        startItem.textContent = wrap.classList.contains('open') ? '\u25B2 All Programs' : '\u25BC All Programs';
+      }
+      return;
+    }
     if (app) Win7.openApp(app);
     else if (shortcut) Win7.openApp(shortcut);
     else if (action === 'exit') Win7.toggle();
@@ -996,23 +1109,27 @@ overlay.addEventListener('mousedown', (e) => {
   /* ── Desktop Icons ── */
   const desktopIcon = e.target.closest('.win7-desktop-icon');
   if (desktopIcon) {
-    const sc = desktopIcon.dataset.shortcut;
-    if (sc === 'computer') Win7.openApp('computer');
-    else if (sc === 'files') Win7.openApp('files');
-    else if (sc === 'recycle') {
-      Win7.createWindow({
-        id: 'recycle-' + Date.now(), title: 'Recycle Bin', icon: '\u{1F5D1}',
-        width: 400, height: 260,
-        content: '<div style="padding:40px;text-align:center;color:rgba(255,255,255,0.4);font-size:48px;line-height:1">\u{1F5D1}</div><div style="text-align:center;color:rgba(255,255,255,0.4)">Recycle Bin is empty</div>',
-      });
-    }
+    Win7.focusDesktopIcon(desktopIcon, e);
+    if (e.detail === 1) Win7.initDesktopIconDrag(e, desktopIcon);
     return;
+  }
+  /* ── Desktop click (deselect) ── */
+  if (e.target.closest('.win7-desktop') && !e.target.closest('.win7-desktop-icon')) {
+    document.querySelectorAll('.win7-desktop-icon.selected').forEach(el => el.classList.remove('selected'));
   }
 });
 
 overlay.addEventListener('contextmenu', (e) => {
   if (e.target.closest('.win7-desktop')) {
     Win7.showContextMenu(e);
+  }
+  if (e.target.closest('.win7-taskbar')) {
+    e.preventDefault();
+    const menu = document.getElementById('win7-taskbar-ctx');
+    if (!menu) return;
+    menu.style.left = Math.min(e.clientX, window.innerWidth - 200) + 'px';
+    menu.style.top = (e.clientY - 160) + 'px';
+    menu.classList.add('active');
   }
 });
 
@@ -1021,11 +1138,53 @@ overlay.addEventListener('click', (e) => {
   if (ctxMenu.classList.contains('active') && !e.target.closest('.win7-context-menu')) {
     Win7.hideContextMenu();
   }
+  const tctxMenu = document.getElementById('win7-taskbar-ctx');
+  if (tctxMenu && tctxMenu.classList.contains('active') && !e.target.closest('.win7-taskbar-ctx')) {
+    tctxMenu.classList.remove('active');
+  }
 
   const ctxItem = e.target.closest('.win7-ctx-item');
   if (ctxItem) {
+    const isTaskbarCtx = e.target.closest('.win7-taskbar-ctx');
     Win7.hideContextMenu();
+    document.getElementById('win7-taskbar-ctx')?.classList.remove('active');
     const action = ctxItem.dataset.action;
+    if (isTaskbarCtx) {
+      if (action === 'taskmgr') { Win7.openApp('taskmgr'); return; }
+      if (action === 'show-desktop') { Win7.showDesktop(); return; }
+      if (action === 'cascade') {
+        const ids = Object.keys(Win7.windows);
+        if (ids.length) {
+          let x = 0, y = 0;
+          for (const id of ids) {
+            const w = Win7.windows[id];
+            if (w && !w.minimized) { w.el.style.left = x + 'px'; w.el.style.top = y + 'px'; x += 24; y += 20; }
+          }
+        }
+        return;
+      }
+      if (action === 'stack') {
+        const ids = Object.keys(Win7.windows).filter(id => Win7.windows[id] && !Win7.windows[id].minimized);
+        const h = Math.floor(100 / ids.length);
+        ids.forEach((id, i) => { const w = Win7.windows[id]; if (w) { w.el.style.left = '0'; w.el.style.top = (i * h) + '%'; w.el.style.width = '100%'; w.el.style.height = h + '%'; } });
+        return;
+      }
+      if (action === 'side') {
+        const ids = Object.keys(Win7.windows).filter(id => Win7.windows[id] && !Win7.windows[id].minimized);
+        const w = Math.floor(100 / ids.length);
+        ids.forEach((id, i) => { const wn = Win7.windows[id]; if (wn) { wn.el.style.left = (i * w) + '%'; wn.el.style.top = '0'; wn.el.style.width = w + '%'; wn.el.style.height = '100%'; } });
+        return;
+      }
+      if (action === 'properties') {
+        Win7.createWindow({
+          id: 'tb-prop-' + Date.now(), title: 'Taskbar and Start Menu Properties', icon: '\u2699',
+          width: 420, height: 280,
+          content: '<div style="padding:20px;text-align:center;color:rgba(255,255,255,0.6);font-size:13px">Taskbar and Start Menu Properties</div><div style="padding:0 20px 20px;text-align:center;color:rgba(255,255,255,0.3);font-size:11px">Taskbar appearance settings are not available in the web version.</div>',
+        });
+        return;
+      }
+      return;
+    }
     if (action === 'personalize') {
       Win7.createWindow({
         id: 'personalize-' + Date.now(), title: 'Personalization', icon: '\u{1F3A8}',
@@ -1069,6 +1228,7 @@ overlay.addEventListener('keydown', (e) => {
     if (document.getElementById('win7-context-menu').classList.contains('active')) {
       Win7.hideContextMenu();
     }
+    document.getElementById('win7-taskbar-ctx')?.classList.remove('active');
   }
 });
 

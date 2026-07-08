@@ -8,7 +8,17 @@
 /* ── Desktop ── */
 .win7-desktop {
   flex: 1; position: relative; overflow: hidden;
-  background: linear-gradient(135deg,#1a3a1a 0%,#2d5a27 30%,#3b7a3b 60%,#2d6a2d 100%);
+  background: linear-gradient(180deg,
+    #6bb3e0 0%, #8fc9eb 10%, #a8daf0 18%, #b8e0f0 25%,
+    #c8e8f0 30%, #d4eef4 35%, #d8eef0 38%,
+    #b8d8b0 42%, #7cb860 48%, #5fa04a 55%,
+    #4d8a3a 62%, #3e7a2e 70%, #356e28 80%, #2d6222 90%, #28581e 100%
+  );
+}
+.win7-desktop::before {
+  content: ''; position: absolute; inset: 0;
+  background: radial-gradient(ellipse 40% 15% at 50% 38%, rgba(255,255,255,0.06) 0%, transparent 100%);
+  pointer-events: none;
 }
 .win7-desktop-icons {
   position: absolute; top: 0; left: 0; bottom: 0; right: 0;
@@ -22,10 +32,29 @@
 }
 .win7-desktop-icon:hover { background: rgba(255,255,255,0.1); }
 .win7-desktop-icon.selected { background: rgba(88,166,255,0.25); }
-.win7-d-icon { font-size: 32px; line-height: 1; margin-bottom: 2px; }
+.win7-d-icon {
+  font-size: 32px; line-height: 1; margin-bottom: 2px;
+  width: 48px; height: 48px; display: flex; align-items: center; justify-content: center;
+  background: rgba(255,255,255,0.08); border-radius: 6px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.1);
+}
+.win7-desktop-icon[data-shortcut="computer"] .win7-d-icon {
+  background: linear-gradient(135deg,#5a8fd4,#3a6fb4);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.15);
+}
+.win7-desktop-icon[data-shortcut="files"] .win7-d-icon {
+  background: linear-gradient(135deg,#f0c84a,#d4a830);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.15);
+}
+.win7-desktop-icon[data-shortcut="recycle"] .win7-d-icon {
+  background: linear-gradient(135deg,#80c8a0,#60a880);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.15);
+}
 .win7-d-label {
-  font-size: 11px; color: #fff; text-shadow: 0 1px 4px rgba(0,0,0,0.8);
+  font-size: 11px; color: #fff;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.8), 0 0 6px rgba(0,0,0,0.4);
   line-height: 1.15; word-break: break-word; max-width: 68px;
+  background: rgba(0,0,0,0.15); padding: 1px 4px; border-radius: 3px;
 }
 
 /* ── Windows Container ── */
@@ -119,10 +148,17 @@
 .win7-taskbar-btn.active { background: rgba(88,166,255,0.2); }
 
 .win7-tray {
-  display: flex; align-items: center; gap: 8px; padding: 0 8px;
+  display: flex; align-items: center; gap: 2px; padding: 0 6px;
   border-left: 1px solid rgba(255,255,255,0.1); height: 28px;
   color: rgba(255,255,255,0.8); font-size: 11px;
 }
+.win7-tray-item {
+  width: 20px; height: 20px; display: flex; align-items: center; justify-content: center;
+  border-radius: 3px; cursor: pointer; font-size: 12px;
+  transition: background 0.1s;
+}
+.win7-tray-item:hover { background: rgba(255,255,255,0.1); }
+.win7-tray-clock { font-size: 11px; padding: 0 4px; cursor: default; font-weight: 500; }
 .win7-show-desktop {
   width: 24px; height: 34px; border: none; background: transparent;
   color: rgba(255,255,255,0.6); border-left: 1px solid rgba(255,255,255,0.1);
@@ -156,7 +192,11 @@
   font-size: 12px; color: rgba(255,255,255,0.85);
 }
 .win7-start-item:hover { background: rgba(88,166,255,0.2); }
+.win7-start-item.all-programs { font-weight: 600; color: rgba(255,255,255,0.9); }
 .win7-start-sep { height: 1px; background: rgba(255,255,255,0.08); margin: 4px 0; }
+.win7-all-programs-wrap { max-height: 0; overflow: hidden; transition: max-height 0.2s ease; }
+.win7-all-programs-wrap.open { max-height: 300px; overflow-y: auto; }
+.win7-all-programs-wrap .win7-start-item { padding-left: 20px; font-size: 11px; }
 .win7-start-bottom {
   display: flex; align-items: center; padding: 6px 8px; gap: 8px;
   border-top: 1px solid rgba(255,255,255,0.08);
