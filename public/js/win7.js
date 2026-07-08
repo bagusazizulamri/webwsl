@@ -1217,25 +1217,35 @@ const Win7 = {
       const dh = desktop.clientHeight - tbH;
       const rect = w.el.getBoundingClientRect();
 
+      const snapMargin = 30;
+      const qw = Math.floor(dw / 2);
+      const qh = Math.floor(dh / 2);
+
+      w.normalRect = w.normalRect || { width: w.el.style.width, height: w.el.style.height, left: w.el.style.left, top: w.el.style.top };
+
       if (rect.top < 10) {
         Win7.maximizeWindow(d.winId);
-      } else if (rect.left < 30) {
-        w.normalRect = w.normalRect || { width: w.el.style.width, height: w.el.style.height, left: w.el.style.left, top: w.el.style.top };
-        w.el.style.width = Math.floor(dw / 2) + 'px';
-        w.el.style.height = dh + 'px';
-        w.el.style.left = '0';
-        w.el.style.top = '0';
-        w.el.style.right = '';
-        w.el.style.bottom = '';
-      } else if (rect.left + rect.width > dw - 30) {
-        w.normalRect = w.normalRect || { width: w.el.style.width, height: w.el.style.height, left: w.el.style.left, top: w.el.style.top };
-        w.el.style.width = Math.floor(dw / 2) + 'px';
-        w.el.style.height = dh + 'px';
-        w.el.style.left = Math.floor(dw / 2) + 'px';
-        w.el.style.top = '0';
-        w.el.style.right = '';
-        w.el.style.bottom = '';
+      } else if (rect.top < qh && rect.left < snapMargin) {
+        w.el.style.width = qw + 'px'; w.el.style.height = qh + 'px';
+        w.el.style.left = '0'; w.el.style.top = '0';
+      } else if (rect.top < qh && rect.left + rect.width > dw - snapMargin) {
+        w.el.style.width = qw + 'px'; w.el.style.height = qh + 'px';
+        w.el.style.left = qw + 'px'; w.el.style.top = '0';
+      } else if (rect.top > qh && rect.left < snapMargin) {
+        w.el.style.width = qw + 'px'; w.el.style.height = qh + 'px';
+        w.el.style.left = '0'; w.el.style.top = qh + 'px';
+      } else if (rect.top > qh && rect.left + rect.width > dw - snapMargin) {
+        w.el.style.width = qw + 'px'; w.el.style.height = qh + 'px';
+        w.el.style.left = qw + 'px'; w.el.style.top = qh + 'px';
+      } else if (rect.left < snapMargin) {
+        w.el.style.width = qw + 'px'; w.el.style.height = dh + 'px';
+        w.el.style.left = '0'; w.el.style.top = '0';
+      } else if (rect.left + rect.width > dw - snapMargin) {
+        w.el.style.width = qw + 'px'; w.el.style.height = dh + 'px';
+        w.el.style.left = qw + 'px'; w.el.style.top = '0';
       }
+      w.el.style.right = '';
+      w.el.style.bottom = '';
     }
     Win7.dragData = null;
   },

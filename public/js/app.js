@@ -21,10 +21,15 @@ let ws, sessions = {}, activeId = null;
 let currentPath = '.', sortKey = '', sortDir = 1;
 let refreshTimer = null;
 let historyStack = [];
+let reconnectAttempts = 0;
 
 function connect() {
   ws = new WebSocket((location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + location.host);
-  ws.onopen = () => { setStatus('connected'); send({ type: 'dashboard' }); };
+  ws.onopen = () => {
+    setStatus('connected');
+    reconnectAttempts = 0;
+    send({ type: 'dashboard' });
+  };
   ws.onmessage = (e) => {
     try {
       const m = JSON.parse(e.data);
@@ -34,7 +39,9 @@ function connect() {
   ws.onclose = () => {
     setStatus('error'); sessions = {}; activeId = null;
     $('#term-c').innerHTML = ''; renderSessions(); clearTimers();
-    setTimeout(connect, 3000);
+    reconnectAttempts++;
+    const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
+    setTimeout(connect, delay);
   };
   ws.onerror = () => setStatus('error');
 }
