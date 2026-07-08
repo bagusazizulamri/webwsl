@@ -11,6 +11,10 @@ const Win7 = {
   termObserver: null,
   fileHistory: [],
   refreshTimers: {},
+  altTabActive: false,
+  altTabIndex: 0,
+  prevShakeTime: 0,
+  shakeCount: 0,
 
   toggle() {
     if (this.active) this.hide();
@@ -133,7 +137,13 @@ const Win7 = {
       const s = w.el.style;
       w.normalRect = { width: s.width, height: s.height, left: s.left, top: s.top };
     }
-    w.el.style.display = 'none';
+    w.el.classList.add('win7-minimizing');
+    const onEnd = () => {
+      w.el.classList.remove('win7-minimizing');
+      w.el.style.display = 'none';
+      w.el.removeEventListener('animationend', onEnd);
+    };
+    w.el.addEventListener('animationend', onEnd);
     this.updateTaskbar();
   },
 
@@ -170,14 +180,20 @@ const Win7 = {
     w.maximized = false;
     w.minimized = false;
     const r = w.normalRect;
+    w.el.style.display = '';
     w.el.style.width = r.width;
     w.el.style.height = r.height;
     w.el.style.left = r.left;
     w.el.style.top = r.top;
     w.el.style.right = '';
     w.el.style.bottom = '';
-    w.el.style.display = '';
     w.el.classList.remove('maximized');
+    w.el.classList.add('win7-restoring');
+    const onEnd = () => {
+      w.el.classList.remove('win7-restoring');
+      w.el.removeEventListener('animationend', onEnd);
+    };
+    w.el.addEventListener('animationend', onEnd);
     this.focusWindow(id);
     this.updateTaskbar();
     if (id === 'terminal') {
@@ -228,6 +244,138 @@ const Win7 = {
     if (v) { v.title = 'Volume: 100%'; v.textContent = '\u{1F50A}'; }
     if (p) { p.title = 'Power: AC'; p.textContent = '\u26A1'; }
     if (a) { a.title = 'No issues'; a.textContent = '\u2691'; }
+  },
+
+  showAltTab(dir) {
+    const visible = this.windowOrder.filter(id => this.windows[id] && !this.windows[id].minimized);
+    if (visible.length < 2) return;
+    if (!this.altTabActive) {
+      this.altTabActive = true;
+      this.altTabIndex = 0;
+      const overlay = document.createElement('div');
+      overlay.id = 'win7-alttab-overlay';
+      overlay.innerHTML = '<div class="win7-alttab-bg"></div><div class="win7-alttab-list" id="win7-alttab-list"></div>';
+      document.getElementById('win7-overlay').appendChild(overlay);
+    }
+    const len = this.windowOrder.filter(id => this.windows[id] && !this.windows[id].minimized).length;
+    this.altTabIndex = (this.altTabIndex + dir + len) % len;
+    this.renderAltTab();
+  },
+
+  renderAltTab() {
+    const list = document.getElementById('win7-alttab-list');
+    if (!list) return;
+    const visible = this.windowOrder.filter(id => this.windows[id] && !this.windows[id].minimized);
+    list.innerHTML = visible.map((id, i) => {
+      const w = this.windows[id];
+      if (!w) return '';
+      const active = i === this.altTabIndex ? ' active' : '';
+      return '<div class="win7-alttab-item' + active + '" data-win="' + id + '">'
+        + '<div class="win7-alttab-icon">' + (w.icon || '\u{1F4C4}') + '</div>'
+        + '<div class="win7-alttab-label">' + Win7.esc(w.title) + '</div></div>';
+    }).join('');
+  },
+
+  hideAltTab() {
+    if (!this.altTabActive) return;
+    this.altTabActive = false;
+    const overlay = document.getElementById('win7-alttab-overlay');
+    if (overlay) overlay.remove();
+    if (this.altTabIndex >= 0) {
+      const visible = this.windowOrder.filter(id => this.windows[id] && !this.windows[id].minimized);
+      const target = visible[this.altTabIndex];
+      if (target) this.focusWindow(target);
+    }
+    this.altTabIndex = 0;
+  },
+
+  snapWindow(id, side) {
+    const w = this.windows[id];
+    if (!w) return;
+    const desktop = document.getElementById('win7-desktop');
+    const taskbar = document.getElementById('win7-taskbar');
+    const tbH = taskbar ? taskbar.offsetHeight : 40;
+    const dw = desktop.clientWidth;
+    const dh = desktop.clientHeight - tbH;
+    if (w.maximized) {
+      w.el.style.width = '';
+      w.el.style.height = '';
+      w.el.style.left = '';
+      w.el.style.top = '';
+      w.el.style.right = '';
+      w.el.style.bottom = '';
+      w.el.classList.remove('maximized');
+      w.maximized = false;
+    }
+    w.normalRect = w.normalRect || { width: w.el.style.width, height: w.el.style.height, left: w.el.style.left, top: w.el.style.top };
+    if (side === 'left') {
+      w.el.style.width = Math.floor(dw / 2) + 'px';
+      w.el.style.height = dh + 'px';
+      w.el.style.left = '0';
+      w.el.style.top = '0';
+    } else if (side === 'right') {
+      w.el.style.width = Math.floor(dw / 2) + 'px';
+      w.el.style.height = dh + 'px';
+      w.el.style.left = Math.floor(dw / 2) + 'px';
+      w.el.style.top = '0';
+    }
+    w.el.style.right = '';
+    w.el.style.bottom = '';
+    this.focusWindow(id);
+  },
+
+  openRunDialog() {
+    this.createWindow({
+      id: 'run-' + Date.now(), title: 'Run', icon: '\u{1F4DD}',
+      width: 380, height: 180,
+      content: [
+        '<div style="padding:24px">',
+        '<div style="font-size:12px;color:rgba(255,255,255,0.7);margin-bottom:12px">Type the name of a program, folder, document, or Internet resource to open.</div>',
+        '<div style="display:flex;gap:8px;align-items:center">',
+        '<span style="font-size:11px;color:rgba(255,255,255,0.5);white-space:nowrap">Open:</span>',
+        '<input id="win7-run-input" style="flex:1;padding:4px 8px;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.15);border-radius:3px;color:#fff;font-size:12px;font-family:inherit;outline:none" spellcheck="false" autofocus>',
+        '</div>',
+        '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">',
+        '<button id="win7-run-ok" style="padding:4px 20px;background:rgba(88,166,255,0.3);border:1px solid rgba(88,166,255,0.4);border-radius:3px;color:#fff;cursor:pointer;font-family:inherit">OK</button>',
+        '<button id="win7-run-cancel" style="padding:4px 16px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.12);border-radius:3px;color:rgba(255,255,255,0.7);cursor:pointer;font-family:inherit">Cancel</button>',
+        '</div></div>',
+      ].join(''),
+      onClose: null,
+    });
+    setTimeout(() => {
+      const inp = document.getElementById('win7-run-input');
+      if (inp) { inp.focus(); inp.addEventListener('keydown', (ev) => {
+        if (ev.key === 'Enter') Win7._execRunCommand(inp.value);
+        if (ev.key === 'Escape') { const w = Win7.windows[inp.closest('.win7-window')?.id]; if (w) Win7.closeWindow(w.id); }
+      }); }
+      const ok = document.getElementById('win7-run-ok');
+      if (ok) ok.addEventListener('click', () => { const v = document.getElementById('win7-run-input'); if (v) Win7._execRunCommand(v.value); });
+      const cancel = document.getElementById('win7-run-cancel');
+      if (cancel) cancel.addEventListener('click', () => { const winId = cancel.closest('.win7-window')?.id; if (winId) Win7.closeWindow(winId); });
+    }, 100);
+  },
+
+  _execRunCommand(cmd) {
+    if (!cmd) return;
+    const map = {
+      'cmd': 'terminal', 'terminal': 'terminal', 'explorer': 'files',
+      'control': 'panel', 'taskmgr': 'taskmgr', 'winver': 'winver',
+      'notepad': null, 'calc': null,
+    };
+    const app = map[cmd.toLowerCase().trim()];
+    if (app) {
+      Win7.openApp(app);
+      const w = Win7.windows[Object.keys(Win7.windows).find(k => k.startsWith('run-'))];
+      if (w) Win7.closeWindow(w.id);
+    } else {
+      const w = Win7.windows[Object.keys(Win7.windows).find(k => k.startsWith('run-'))];
+      if (w) {
+        const body = w.el.querySelector('.win7-win-body');
+        if (body) {
+          body.innerHTML = '<div style="padding:24px;text-align:center"><div style="color:rgba(248,81,73,0.8);font-size:14px;margin-bottom:8px">\u26A0</div><div style="color:rgba(255,255,255,0.6)">\'<span style="font-family:monospace">' + Win7.esc(cmd) + '</span>\' is not recognized.</div></div>';
+        }
+      }
+    }
   },
 
   toggleStartMenu() {
@@ -315,6 +463,13 @@ const Win7 = {
           id: 'devices-' + Date.now(), title: 'Devices and Printers', icon: '\u{1F4F1}',
           width: 460, height: 280,
           content: '<div style="padding:32px;text-align:center;color:rgba(255,255,255,0.4)"><div style="font-size:48px;margin-bottom:12px">\u{1F4F1}</div><div>No devices connected</div><div style="font-size:10px;margin-top:8px;color:rgba(255,255,255,0.25)">WebWSL virtual environment</div></div>',
+        });
+        break;
+      case 'winver':
+        this.createWindow({
+          id: 'winver-' + Date.now(), title: 'About Windows', icon: '\u{1F4BB}',
+          width: 420, height: 280,
+          content: '<div style="padding:32px;text-align:center"><div style="font-size:40px;margin-bottom:8px;opacity:0.6">\u{229E}</div><div style="font-size:16px;font-weight:600;color:rgba(255,255,255,0.8)">Microsoft Windows 7</div><div style="font-size:11px;color:rgba(255,255,255,0.4);margin-top:4px">WebWSL Edition &middot; Version 1.0</div><div style="font-size:10px;color:rgba(255,255,255,0.3);margin-top:12px">Microsoft Windows 7 WebWSL Edition. All rights reserved.</div><div style="font-size:10px;color:rgba(255,255,255,0.25);margin-top:4px">WebWSL virtual environment &middot; Linux ' + (navigator.platform || 'unknown') + '</div></div>',
         });
         break;
       case 'computer':
@@ -782,7 +937,7 @@ const Win7 = {
     const w = this.windows[winId];
     if (!w || w.maximized) return;
     const rect = w.el.getBoundingClientRect();
-    this.dragData = { winId, startX: e.clientX, startY: e.clientY, origLeft: rect.left, origTop: rect.top };
+    this.dragData = { winId, startX: e.clientX, startY: e.clientY, origLeft: rect.left, origTop: rect.top, prevDir: 0, shakeCount: 0 };
     const tb = w.el.querySelector('.win7-win-titlebar');
     if (tb) tb.classList.add('dragging');
     document.addEventListener('mousemove', this._onDragMove);
@@ -797,6 +952,18 @@ const Win7 = {
     if (!w) return;
     w.el.style.left = (d.origLeft + e.clientX - d.startX) + 'px';
     w.el.style.top = (d.origTop + e.clientY - d.startY) + 'px';
+    const dx = e.clientX - d.startX;
+    if (Math.abs(dx) > 15) {
+      const dir = dx > 0 ? 1 : -1;
+      if (d.prevDir && dir !== d.prevDir && Date.now() - d.lastShake < 200) {
+        d.shakeCount++;
+        if (d.shakeCount >= 4) {
+          d.shakeDetected = true;
+        }
+      }
+      d.prevDir = dir;
+      d.lastShake = Date.now();
+    }
   },
 
   _onDragEnd(e) {
@@ -810,6 +977,25 @@ const Win7 = {
       if (tb) tb.classList.remove('dragging');
     }
     if (w && Math.abs(e.clientX - d.startX) < 5 && Math.abs(e.clientY - d.startY) < 5) {
+      Win7.dragData = null;
+      return;
+    }
+
+    if (d.shakeDetected && w && !w.maximized) {
+      const allIds = Win7.windowOrder.filter(id => Win7.windows[id] && !Win7.windows[id].minimized && id !== d.winId);
+      for (const id of allIds) {
+        const ow = Win7.windows[id];
+        if (ow) {
+          if (!ow.normalRect) {
+            const s = ow.el.style;
+            ow.normalRect = { width: s.width, height: s.height, left: s.left, top: s.top };
+          }
+          if (id === 'terminal' && Win7.terminalAttached) Win7._detachTerminal();
+          ow.minimized = true;
+          ow.el.style.display = 'none';
+        }
+      }
+      Win7.updateTaskbar();
       Win7.dragData = null;
       return;
     }
@@ -1208,6 +1394,65 @@ overlay.addEventListener('click', (e) => {
 
 overlay.addEventListener('keydown', (e) => {
   const target = e.target;
+
+  if (e.altKey && e.key === 'Tab') {
+    e.preventDefault();
+    if (e.shiftKey) Win7.showAltTab(-1);
+    else Win7.showAltTab(1);
+    return;
+  }
+
+  if (e.altKey && e.key === 'Escape' && Win7.altTabActive) {
+    Win7.hideAltTab();
+    return;
+  }
+
+  if (Win7.altTabActive && e.key === 'Enter') {
+    Win7.hideAltTab();
+    return;
+  }
+
+  if (e.key === 'Meta' || e.key === 'OS') {
+    Win7._winKeyHeld = true;
+    return;
+  }
+
+  if (Win7._winKeyHeld) {
+    Win7._winKeyHeld = false;
+    if (e.key === 'd') { Win7.showDesktop(); e.preventDefault(); return; }
+    if (e.key === 'e') { Win7.openApp('files'); e.preventDefault(); return; }
+    if (e.key === 'r') { Win7.openRunDialog(); e.preventDefault(); return; }
+    if (e.key === 'Tab') { e.preventDefault(); return; }
+    if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      const topId = Win7.windowOrder[Win7.windowOrder.length - 1];
+      if (topId) Win7.maximizeWindow(topId);
+      return;
+    }
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      const topId = Win7.windowOrder[Win7.windowOrder.length - 1];
+      if (topId) {
+        const w = Win7.windows[topId];
+        if (w && w.maximized) Win7.restoreWindow(topId);
+        else Win7.minimizeWindow(topId);
+      }
+      return;
+    }
+    if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      const topId = Win7.windowOrder[Win7.windowOrder.length - 1];
+      if (topId) Win7.snapWindow(topId, 'left');
+      return;
+    }
+    if (e.key === 'ArrowRight') {
+      e.preventDefault();
+      const topId = Win7.windowOrder[Win7.windowOrder.length - 1];
+      if (topId) Win7.snapWindow(topId, 'right');
+      return;
+    }
+  }
+
   if (target.id === 'win7-explorer-addr' && e.key === 'Enter') {
     if (window.send) {
       Win7.fileHistory.push(target.value);
@@ -1225,10 +1470,17 @@ overlay.addEventListener('keydown', (e) => {
   }
   if (e.key === 'Escape') {
     if (Win7.startMenuOpen) Win7.toggleStartMenu();
+    if (Win7.altTabActive) { Win7.hideAltTab(); return; }
     if (document.getElementById('win7-context-menu').classList.contains('active')) {
       Win7.hideContextMenu();
     }
     document.getElementById('win7-taskbar-ctx')?.classList.remove('active');
+  }
+});
+
+overlay.addEventListener('keyup', (e) => {
+  if (e.key === 'Meta' || e.key === 'OS') {
+    Win7._winKeyHeld = false;
   }
 });
 
