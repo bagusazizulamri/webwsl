@@ -59,3 +59,29 @@ webwsl/
 ├── .gitignore
 └── package.json
 ```
+
+## FAQ
+
+**Q: Apakah WebWSL bisa diakses dari perangkat lain?**  
+A: Bisa. Server berjalan di `0.0.0.0`, jadi cukup akses `http://<IP-server>:3000` dari perangkat lain dalam jaringan yang sama.
+
+**Q: Apakah WebWSL bisa berjalan di Windows tanpa WSL?**  
+A: Tidak. WebWSL membutuhkan bash shell — baik native Linux maupun WSL di Windows.
+
+**Q: Bagaimana cara mengganti port?**  
+A: Set variabel environment `PORT`, misal `PORT=8080 npm start`, atau ubah file `.env`.
+
+**Q: Apakah terminal ini mendukung copy-paste?**  
+A: Ya. xterm.js bawaan mendukung seleksi teks (copy) dan paste via `Ctrl+Shift+V` atau klik kanan.
+
+**Q: Berapa maksimal terminal session yang bisa dibuka?**  
+A: Default 10 session. Bisa diubah dengan mengganti konstanta `MAX_TERMINALS` di `src/server.js`.
+
+**Q: Apakah WebWSL aman digunakan di jaringan publik?**  
+A: WebWSL tidak memiliki autentikasi. Sebaiknya gunakan reverse proxy seperti nginx dengan basic auth, atau akses via SSH tunnel.
+
+**Q: Kenapa panel Services tidak muncul?**  
+A: WebWSL mendeteksi layanan via `systemctl` atau `service --status-all`. Pastikan service manager tersedia di sistem Anda.
+
+**Q: Bagaimana cara menghentikan proses dari panel Processes?**  
+A: Klik tombol **Kill** di baris proses yang ingin dihentikan. Proses akan dikirim sinyal `SIGTERM`.
