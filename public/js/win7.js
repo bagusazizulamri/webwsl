@@ -78,9 +78,9 @@ const Win7 = {
       '<span class="win7-win-icon">' + o.icon + '</span>',
       '<span class="win7-win-title">' + this.esc(o.title) + '</span>',
       '<div class="win7-win-btns">',
-      '<button class="win7-win-btn minimize" data-win="' + o.id + '" data-action="minimize">\u2500</button>',
-      '<button class="win7-win-btn maximize" data-win="' + o.id + '" data-action="maximize">\u25A1</button>',
-      '<button class="win7-win-btn close" data-win="' + o.id + '" data-action="close">\u2715</button>',
+      '<button class="win7-win-btn minimize" data-win="' + o.id + '" data-action="minimize"><svg width="10" height="10" viewBox="0 0 10 10"><rect x="1" y="5" width="8" height="1.5" fill="currentColor"/></svg></button>',
+      '<button class="win7-win-btn maximize" data-win="' + o.id + '" data-action="maximize"><svg width="10" height="10" viewBox="0 0 10 10"><rect x="1.5" y="1.5" width="7" height="7" rx="0.5" fill="none" stroke="currentColor" stroke-width="1.2"/></svg></button>',
+      '<button class="win7-win-btn close" data-win="' + o.id + '" data-action="close"><svg width="10" height="10" viewBox="0 0 10 10"><path d="M2 2l6 6M8 2l-6 6" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg></button>',
       '</div></div>',
       '<div class="win7-win-body" data-win="' + o.id + '">' + o.content + '</div>',
       o.resizable ? [
@@ -207,6 +207,10 @@ const Win7 = {
     w.el.style.zIndex = ++this.windowZIndex;
     const idx = this.windowOrder.indexOf(id);
     if (idx > -1) { this.windowOrder.splice(idx, 1); this.windowOrder.push(id); }
+    for (const wid of Object.keys(this.windows)) {
+      const w2 = this.windows[wid];
+      if (w2 && w2.el) w2.el.classList.toggle('inactive', wid !== id);
+    }
     this.updateTaskbar();
     if (id === 'terminal') {
       const s = window.__getSessions()[window.__getActiveId()];

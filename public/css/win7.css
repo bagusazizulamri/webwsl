@@ -67,10 +67,14 @@
   background: rgba(30,30,36,0.88);
   backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
   border-radius: 6px 6px 0 0;
-  box-shadow: 0 4px 24px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.06);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.06);
   display: flex; flex-direction: column;
   border: 1px solid rgba(255,255,255,0.08);
   animation: win7Appear 0.2s ease-out;
+}
+.win7-window.inactive {
+  background: rgba(25,25,30,0.82);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.03);
 }
 @keyframes win7Appear {
   from { opacity: 0; transform: scale(0.92); }
@@ -79,9 +83,12 @@
 .win7-window.maximized { border-radius: 0; border: none; box-shadow: none; }
 
 .win7-win-titlebar {
-  display: flex; align-items: center; height: 30px; padding: 0 4px 0 8px;
-  background: linear-gradient(180deg,rgba(255,255,255,0.1) 0%,rgba(255,255,255,0.04) 100%);
+  display: flex; align-items: center; height: 30px; padding: 0 2px 0 8px;
+  background: linear-gradient(180deg,rgba(255,255,255,0.12) 0%,rgba(255,255,255,0.05) 50%,rgba(255,255,255,0.02) 100%);
   border-radius: 6px 6px 0 0; cursor: default; flex-shrink: 0;
+}
+.win7-window.inactive .win7-win-titlebar {
+  background: linear-gradient(180deg,rgba(255,255,255,0.06) 0%,rgba(255,255,255,0.02) 100%);
 }
 .win7-window.maximized .win7-win-titlebar { border-radius: 0; }
 .win7-win-titlebar.dragging { cursor: move; }
@@ -89,18 +96,28 @@
 .win7-win-title {
   flex: 1; font-size: 12px; font-weight: 500; white-space: nowrap;
   overflow: hidden; text-overflow: ellipsis; color: rgba(255,255,255,0.9);
+  text-shadow: 0 1px 2px rgba(0,0,0,0.3);
 }
-.win7-win-btns { display: flex; gap: 4px; margin-left: 8px; }
+.win7-window.inactive .win7-win-title { color: rgba(255,255,255,0.5); }
+.win7-win-btns { display: flex; gap: 2px; margin-left: 8px; }
 .win7-win-btn {
-  width: 16px; height: 16px; border: none; border-radius: 3px; cursor: pointer;
+  width: 21px; height: 20px; border: none; cursor: pointer;
   display: flex; align-items: center; justify-content: center;
-  font-size: 10px; color: rgba(255,255,255,0.6); background: rgba(255,255,255,0.06);
-  transition: background 0.1s; padding: 0;
+  font-size: 9px; color: rgba(255,255,255,0.7);
+  background: transparent;
+  transition: background 0.08s; padding: 0;
+  position: relative;
 }
-.win7-win-btn:hover { background: rgba(255,255,255,0.15); color: #fff; }
-.win7-win-btn.close { background: rgba(255,80,80,0.3); color: #fff; }
-.win7-win-btn.close:hover { background: rgba(255,50,50,0.7); }
-.win7-win-btn.maximize:hover { background: rgba(255,255,255,0.2); }
+.win7-win-btn::before {
+  content: ''; position: absolute; inset: 2px; border-radius: 2px;
+  transition: background 0.08s;
+}
+.win7-win-btn:hover::before { background: rgba(255,255,255,0.1); }
+.win7-win-btn.close:hover::before { background: rgba(255,50,50,0.8); }
+.win7-win-btn.close:active::before { background: rgba(200,30,30,0.9); }
+.win7-win-btn.minimize:hover::before { background: rgba(255,255,255,0.15); }
+.win7-win-btn.maximize:hover::before { background: rgba(255,255,255,0.15); }
+.win7-win-btn svg { position: relative; z-index: 1; }
 
 .win7-win-body {
   flex: 1; overflow: auto; padding: 8px; position: relative;
@@ -218,18 +235,24 @@
 /* ── Context Menu ── */
 .win7-context-menu {
   position: absolute; display: none; z-index: 10020;
-  background: rgba(35,37,42,0.96); backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px); min-width: 160px;
-  border: 1px solid rgba(255,255,255,0.1); border-radius: 4px;
-  padding: 4px 0; box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+  background: rgba(35,37,42,0.97); backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px); min-width: 180px;
+  border: 1px solid rgba(120,120,130,0.4);
+  box-shadow: 0 4px 20px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.06);
+  border-radius: 4px;
+  padding: 4px 0;
 }
 .win7-context-menu.active { display: block; }
 .win7-ctx-item {
-  padding: 5px 16px; cursor: pointer; font-size: 12px;
-  color: rgba(255,255,255,0.85); transition: background 0.1s;
+  padding: 5px 24px; cursor: pointer; font-size: 12px;
+  color: rgba(255,255,255,0.88); transition: none;
+  position: relative;
 }
-.win7-ctx-item:hover { background: rgba(88,166,255,0.25); }
-.win7-ctx-sep { height: 1px; margin: 4px 8px; background: rgba(255,255,255,0.08); }
+.win7-ctx-item:hover {
+  background: linear-gradient(180deg,rgba(60,150,220,0.5) 0%,rgba(40,120,200,0.5) 100%);
+  color: #fff;
+}
+.win7-ctx-sep { height: 1px; margin: 4px 10px; background: rgba(255,255,255,0.08); }
 
 /* ── Alt+Tab Switcher ── */
 #win7-alttab-overlay {
