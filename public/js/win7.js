@@ -401,6 +401,27 @@ const Win7 = {
     }
   },
 
+  _openSearch() {
+    Win7.createWindow({
+      id: 'search-' + Date.now(), title: 'Search Results', icon: '\u{1F50D}',
+      width: 480, height: 320,
+      content: '<div style="padding:16px"><div style="font-size:13px;font-weight:600;color:rgba(255,255,255,0.7);margin-bottom:8px">Search</div><div style="display:flex;gap:6px"><input id="win7-search-win" style="flex:1;padding:5px 8px;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.12);border-radius:3px;color:#fff;font-size:12px;font-family:inherit;outline:none" placeholder="Search files and folders..." spellcheck="false"><button id="win7-search-win-go" style="padding:4px 12px;background:rgba(88,166,255,0.2);border:none;border-radius:3px;color:#fff;cursor:pointer">Search</button></div><div style="margin-top:12px;color:rgba(255,255,255,0.3);font-size:11px" id="win7-search-win-results">Enter a search term and click Search.</div></div>',
+    });
+    setTimeout(() => {
+      const inp = document.getElementById('win7-search-win');
+      if (inp) inp.focus();
+      const btn = document.getElementById('win7-search-win-go');
+      if (btn) btn.addEventListener('click', () => {
+        const q = document.getElementById('win7-search-win')?.value;
+        const res = document.getElementById('win7-search-win-results');
+        if (res) {
+          if (q) res.innerHTML = 'Searching for "<b>' + Win7.esc(q) + '</b>"...<br><br><span style="color:rgba(255,255,255,0.2)">Search uses the File Explorer &mdash; navigate manually.</span>';
+          else res.innerHTML = 'Enter a search term.';
+        }
+      });
+    }, 100);
+  },
+
   _execRunCommand(cmd) {
     if (!cmd) return;
     const map = {
@@ -1769,6 +1790,7 @@ overlay.addEventListener('keydown', (e) => {
     if (e.key === 'd') { Win7.showDesktop(); e.preventDefault(); return; }
     if (e.key === 'e') { Win7.openApp('files'); e.preventDefault(); return; }
     if (e.key === 'r') { Win7.openRunDialog(); e.preventDefault(); return; }
+    if (e.key === 'f') { Win7._openSearch(); e.preventDefault(); return; }
     if (e.key === 'Tab') { e.preventDefault(); return; }
     if (e.key === 'ArrowUp') {
       e.preventDefault();
@@ -1823,6 +1845,54 @@ overlay.addEventListener('keydown', (e) => {
     }
     document.getElementById('win7-taskbar-ctx')?.classList.remove('active');
     document.getElementById('win7-file-ctx')?.classList.remove('active');
+  }
+
+  /* Alt+F4 — close active window */
+  if (e.altKey && e.key === 'F4') {
+    e.preventDefault();
+    const topId = Win7.windowOrder[Win7.windowOrder.length - 1];
+    if (topId) Win7.closeWindow(topId);
+    return;
+  }
+
+  /* Ctrl+Esc — open Start Menu */
+  if (e.ctrlKey && e.key === 'Escape') {
+    e.preventDefault();
+    Win7.toggleStartMenu();
+    return;
+  }
+
+  /* F5 — refresh */
+  if (e.key === 'F5') {
+    e.preventDefault();
+    if (window.send) {
+      window.send({ type: 'dashboard' });
+      const addr = document.querySelector('#win7-win-files .win7-explorer-addr');
+      if (addr) window.send({ type: 'files', path: addr.value });
+    }
+    return;
+  }
+
+  /* F2 — rename selected desktop icon */
+  if (e.key === 'F2') {
+    const selected = document.querySelector('.win7-desktop-icon.selected');
+    if (selected) {
+      const name = prompt('Rename:', selected.querySelector('.win7-d-label')?.textContent || '');
+      if (name && selected.querySelector('.win7-d-label')) {
+        selected.querySelector('.win7-d-label').textContent = name;
+      }
+    }
+    return;
+  }
+
+  /* Delete — delete selected desktop icon */
+  if (e.key === 'Delete' || e.key === 'Del') {
+    const selected = document.querySelector('.win7-desktop-icon.selected');
+    if (selected) {
+      const label = selected.querySelector('.win7-d-label')?.textContent || 'item';
+      if (confirm('Delete ' + label + '?')) selected.remove();
+    }
+    return;
   }
 });
 
