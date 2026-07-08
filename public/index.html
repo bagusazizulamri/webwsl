@@ -5,7 +5,8 @@
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>WebWSL</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@6.0.0/css/xterm.css">
-<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/style.css?v=2">
+<link rel="stylesheet" href="css/win7.css?v=2">
 <script type="importmap">
 {
   "imports": {
@@ -29,6 +30,7 @@
       <button class="nav-btn" data-panel="files">&#x1F4C1; Files</button>
       <button class="nav-btn" data-panel="processes">&#x2699; Proc</button>
       <button class="nav-btn" data-panel="services">&#x1F527; Svc</button>
+      <button class="nav-btn" id="win7-btn"><span style="font-size:16px">&#x229E;</span> Win7</button>
     </nav>
 
     <div class="section">
@@ -50,47 +52,151 @@
   <main id="main">
     <div id="panel-terminal" class="panel active"><div class="term-c" id="term-c"></div></div>
 
+    <!-- ═══════════════════ DASHBOARD ═══════════════════ -->
     <div id="panel-dashboard" class="panel">
       <div class="tool-panel">
-        <div class="tool-h"><h1>Dashboard</h1><button class="btn-sm" data-cmd="sysinfo">&#x21bb;</button></div>
-        <div class="dash-g" id="dash-g">
-          <div class="dash-c"><div class="c-l">Hostname</div><div class="c-v" id="info-hostname">-</div></div>
-          <div class="dash-c"><div class="c-l">Platform</div><div class="c-v" id="info-platform">-</div></div>
-          <div class="dash-c"><div class="c-l">Arch</div><div class="c-v" id="info-arch">-</div></div>
-          <div class="dash-c"><div class="c-l">Release</div><div class="c-v" id="info-release">-</div></div>
-          <div class="dash-c"><div class="c-l">Shell</div><div class="c-v" id="info-shell">-</div></div>
-          <div class="dash-c"><div class="c-l">CPUs</div><div class="c-v" id="info-cpus">-</div></div>
-          <div class="dash-c"><div class="c-l">Memory</div><div class="c-v" id="info-mem">-</div></div>
-          <div class="dash-c"><div class="c-l">Uptime</div><div class="c-v" id="info-uptime">-</div></div>
+        <div class="tool-h"><h1>Dashboard</h1></div>
+        <div class="dash-body" id="dash-body">
+          <div class="dash-info-row">
+            <div class="dash-info-card"><span class="dash-info-lbl">Hostname</span><span class="dash-info-val" id="info-hostname">-</span></div>
+            <div class="dash-info-card"><span class="dash-info-lbl">Platform</span><span class="dash-info-val" id="info-platform">-</span></div>
+            <div class="dash-info-card"><span class="dash-info-lbl">Kernel</span><span class="dash-info-val" id="info-release">-</span></div>
+            <div class="dash-info-card"><span class="dash-info-lbl">Uptime</span><span class="dash-info-val" id="info-uptime">-</span></div>
+            <div class="dash-info-card"><span class="dash-info-lbl">Load</span><span class="dash-info-val" id="info-loadavg">-</span></div>
+          </div>
+          <div class="dash-gauges">
+            <div class="gauge-card">
+              <div class="gauge-lbl">CPU</div>
+              <svg class="gauge-svg" viewBox="0 0 120 120">
+                <circle class="gauge-bg" cx="60" cy="60" r="52"/>
+                <circle class="gauge-fill" id="gauge-cpu" cx="60" cy="60" r="52" stroke-dasharray="326.726" stroke-dashoffset="326.726"/>
+                <text class="gauge-pct" x="60" y="52" text-anchor="middle">0%</text>
+                <text class="gauge-sub" id="gauge-cpu-sub" x="60" y="72" text-anchor="middle">-</text>
+              </svg>
+              <div class="gauge-model" id="info-cpuModel"></div>
+              <div class="cpu-core-grid" id="cpu-cores"></div>
+            </div>
+            <div class="gauge-card">
+              <div class="gauge-lbl">Memory</div>
+              <svg class="gauge-svg" viewBox="0 0 120 120">
+                <circle class="gauge-bg" cx="60" cy="60" r="52"/>
+                <circle class="gauge-fill gauge-blue" id="gauge-mem" cx="60" cy="60" r="52" stroke-dasharray="326.726" stroke-dashoffset="326.726"/>
+                <text class="gauge-pct" id="gauge-mem-pct" x="60" y="52" text-anchor="middle">0%</text>
+                <text class="gauge-sub" id="gauge-mem-sub" x="60" y="72" text-anchor="middle">-</text>
+              </svg>
+              <div class="gauge-info" id="info-memory"></div>
+            </div>
+            <div class="gauge-card">
+              <div class="gauge-lbl">Disk (/)</div>
+              <svg class="gauge-svg" viewBox="0 0 120 120">
+                <circle class="gauge-bg" cx="60" cy="60" r="52"/>
+                <circle class="gauge-fill gauge-yellow" id="gauge-disk" cx="60" cy="60" r="52" stroke-dasharray="326.726" stroke-dashoffset="326.726"/>
+                <text class="gauge-pct" id="gauge-disk-pct" x="60" y="52" text-anchor="middle">0%</text>
+                <text class="gauge-sub" id="gauge-disk-sub" x="60" y="72" text-anchor="middle">-</text>
+              </svg>
+              <div class="gauge-info" id="info-disk"></div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
 
+    <!-- ═══════════════════ FILES ═══════════════════ -->
     <div id="panel-files" class="panel">
       <div class="tool-panel">
-        <div class="tool-h"><h1>Files</h1>
-          <div class="tool-inp"><input id="fp" class="inp" value="."><button class="btn-sm" data-cmd="files">Go</button></div>
+        <div class="tool-h"><h1>Files</h1></div>
+        <div class="files-toolbar">
+          <div class="files-path-row">
+            <button class="files-btn files-btn-nav" id="files-back" title="Back">&#x2190;</button>
+            <div class="files-breadcrumb" id="files-breadcrumb"></div>
+            <input id="fp" class="inp" value="." spellcheck="false">
+            <button class="files-btn files-btn-go" id="files-go">Go</button>
+          </div>
         </div>
-        <pre class="out" id="out-files">Click Go to list files...</pre>
+        <div id="files-container" class="files-grid">
+          <div class="empty-msg">Enter a path and click Go</div>
+        </div>
       </div>
     </div>
 
+    <!-- ═══════════════════ PROCESSES ═══════════════════ -->
     <div id="panel-processes" class="panel">
       <div class="tool-panel">
-        <div class="tool-h"><h1>Processes</h1><button class="btn-sm" data-cmd="procs">&#x21bb;</button></div>
-        <pre class="out" id="out-procs">Click Refresh to load processes...</pre>
+        <div class="tool-h"><h1>Processes</h1>
+          <div class="tool-act">
+            <input id="proc-search" class="search-inp" placeholder="Filter..." spellcheck="false">
+          </div>
+        </div>
+        <div id="procs-container" class="table-wrap">
+          <div class="empty-msg">Loading processes...</div>
+        </div>
       </div>
     </div>
 
+    <!-- ═══════════════════ SERVICES ═══════════════════ -->
     <div id="panel-services" class="panel">
       <div class="tool-panel">
-        <div class="tool-h"><h1>Services</h1><button class="btn-sm" data-cmd="svcs">&#x21bb;</button></div>
-        <pre class="out" id="out-svcs">Click Refresh to load services...</pre>
+        <div class="tool-h"><h1>Services</h1></div>
+        <div id="svcs-container" class="table-wrap">
+          <div class="empty-msg">Loading services...</div>
+        </div>
       </div>
     </div>
   </main>
 </div>
 
-<script type="module" src="js/app.js"></script>
+<!-- ════════════════ Windows 7 Overlay ════════════════ -->
+<div id="win7-overlay">
+  <div class="win7-desktop" id="win7-desktop">
+    <div class="win7-desktop-icons">
+      <div class="win7-desktop-icon" data-shortcut="computer"><div class="win7-d-icon">&#x1F4BB;</div><div class="win7-d-label">Computer</div></div>
+      <div class="win7-desktop-icon" data-shortcut="files"><div class="win7-d-icon">&#x1F4C1;</div><div class="win7-d-label">User Files</div></div>
+      <div class="win7-desktop-icon" data-shortcut="recycle"><div class="win7-d-icon">&#x1F5D1;</div><div class="win7-d-label">Recycle Bin</div></div>
+    </div>
+    <div class="win7-context-menu" id="win7-context-menu">
+      <div class="win7-ctx-item" data-action="view">View</div>
+      <div class="win7-ctx-sep"></div>
+      <div class="win7-ctx-item" data-action="refresh">Refresh</div>
+      <div class="win7-ctx-sep"></div>
+      <div class="win7-ctx-item" data-action="personalize">Personalize</div>
+    </div>
+    <div class="win7-windows-container" id="win7-windows-container"></div>
+  </div>
+
+  <div class="win7-taskbar" id="win7-taskbar">
+    <button class="win7-start-btn" id="win7-start-btn">&#x229E;</button>
+    <div class="win7-taskbar-windows" id="win7-taskbar-windows"></div>
+    <div class="win7-tray" id="win7-tray">
+      <span class="win7-tray-item" id="win7-clock"></span>
+    </div>
+    <button class="win7-show-desktop" id="win7-show-desktop" title="Show Desktop">&#x25AC;</button>
+  </div>
+
+  <div class="win7-start-menu" id="win7-start-menu">
+    <div class="win7-start-body">
+      <div class="win7-start-left">
+        <div class="win7-start-item" data-app="terminal">&#x26A1; Terminal</div>
+        <div class="win7-start-item" data-app="dashboard">&#x1F4CA; Dashboard</div>
+        <div class="win7-start-item" data-app="files">&#x1F4C1; Files</div>
+        <div class="win7-start-item" data-app="taskmgr">&#x2699; Task Manager</div>
+        <div class="win7-start-item" data-app="services">&#x1F527; Services</div>
+      </div>
+      <div class="win7-start-right">
+        <div class="win7-start-item" data-shortcut="computer">&#x1F4BB; Computer</div>
+        <div class="win7-start-item" data-shortcut="panel">&#x2699; Control Panel</div>
+        <div class="win7-start-item" data-shortcut="devices">&#x1F4F1; Devices</div>
+        <div class="win7-start-sep"></div>
+        <div class="win7-start-item" data-action="exit">&#x1F6AA; Exit Win7</div>
+      </div>
+    </div>
+    <div class="win7-start-bottom">
+      <div class="win7-start-search"><input type="text" placeholder="Search programs and files..." id="win7-search-input"></div>
+      <button class="win7-start-shutdown" id="win7-start-shutdown" title="Exit Win7 Mode">&#x23FB;</button>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="js/app.js?v=2"></script>
+<script src="js/win7.js?v=2"></script>
 </body>
 </html>

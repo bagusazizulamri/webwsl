@@ -1,22 +1,38 @@
 # WebWSL
 
-A web-based Linux (and WSL) terminal emulator with a built-in dashboard, file browser, process manager, and service manager.
+A web-based Linux (and WSL) terminal emulator with a built-in dashboard, file browser, process manager, service manager, and **Windows 7 inspired desktop UI**.
 
 ## Features
 
+### Modern Dark Mode
 - **Multi-session Terminal** — xterm.js-powered terminal with multiple concurrent sessions, resize support, and quick-action buttons
 - **Dashboard** — Real-time system overview with SVG gauges for CPU, memory, and disk usage; per-core CPU bars; host info
 - **File Browser** — Navigate directories, breadcrumb trail, back history, file type icons, size display
 - **Process Manager** — Table with sortable columns (PID, CPU%, MEM%, RSS), inline kill buttons, filter/search
 - **Service Manager** — Start/stop systemd or sysvinit services with status badges
-- **Slash Commands** — `/help`, `/files`, `/ps`, `/services`, `/sysinfo`, `/clear` available directly in the terminal
-- **WSL Detection** — Automatically detects WSL and spawns shells accordingly
+
+### Windows 7 Desktop Mode
+Click the **Win7** button in the sidebar to switch to a full Windows 7-inspired desktop environment:
+- **Aero Glass Windows** — Draggable, resizable windows with minimize/maximize/close, double-click titlebar to maximize
+- **Taskbar** — Running window buttons, system tray with clock, show desktop button
+- **Start Menu** — Launch all apps, search programs and files, shutdown button
+- **Desktop Icons** — Computer, User Files, Recycle Bin
+- **Right-click Context Menu** — View, Refresh, Personalize
+- **Aero Snap** — Drag to top to maximize, drag to left/right edges for 50% width snap
+- **All panels in windows** — Terminal, Dashboard, File Explorer, Task Manager, Services, Control Panel
+- **Terminal integration** — xterm.js seamlessly moves into Win7 terminal window
+
+### Slash Commands
+`/help`, `/files`, `/ps`, `/services`, `/sysinfo`, `/clear` available directly in the terminal
+
+### WSL Detection
+Automatically detects WSL and spawns shells accordingly
 
 ## Tech Stack
 
 - **Backend:** Node.js, Express, `ws` (WebSocket), `node-pty`, `compression`
 - **Frontend:** Vanilla JS, [xterm.js](https://xtermjs.org/) with FitAddon, SVG gauges
-- **Styling:** Dark theme inspired by GitHub Dark
+- **Styling:** Dark theme + Windows 7 Aero glass overlay (no external dependencies)
 
 ## Requirements
 
@@ -37,7 +53,7 @@ npm install
 npm start
 ```
 
-Then open `http://localhost:3000` in your browser.
+Then open `http://localhost:3000` in your browser. Click the **Win7** button in the sidebar to switch to Windows 7 desktop mode.
 
 ### Environment
 
@@ -50,14 +66,20 @@ Then open `http://localhost:3000` in your browser.
 ```
 webwsl/
 ├── public/
-│   ├── css/style.css      # Stylesheet
-│   ├── js/app.js          # Frontend application
-│   └── index.html         # Entry HTML
+│   ├── css/
+│   │   ├── style.css       # Modern dark theme
+│   │   └── win7.css        # Windows 7 Aero glass overlay
+│   ├── js/
+│   │   ├── app.js          # Frontend application
+│   │   └── win7.js         # Win7 desktop UI engine
+│   └── index.html          # Entry HTML
 ├── src/
-│   └── server.js          # Backend server
-├── .env                   # Environment variables
+│   ├── server.js           # Backend server
+│   └── ...
+├── .env
 ├── .gitignore
-└── package.json
+├── package.json
+└── README.md
 ```
 
 ## FAQ

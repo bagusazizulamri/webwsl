@@ -6,6 +6,7 @@ const os = require('os');
 const pty = require('node-pty');
 const { exec } = require('child_process');
 const compression = require('compression');
+const fs = require('fs');
 
 const PORT = process.env.PORT || 3000;
 const MAX_TERMINALS = 10;
@@ -16,7 +17,7 @@ const server = http.createServer(app);
 const wss = new WebSocketServer({ server, maxPayload: 1024 * 1024 });
 
 app.use(compression({ level: 6, threshold: 256 }));
-app.use(express.static(path.join(__dirname, '..', 'public'), { maxAge: '1h', etag: true }));
+app.use(express.static(path.join(__dirname, '..', 'public'), { maxAge: 0, etag: false }));
 
 const isWSL = os.platform() === 'win32' && require('child_process').spawnSync('wsl', ['echo', 'ok'], { timeout: 2000 }).status === 0;
 const SHELL = isWSL ? 'wsl' : 'bash';
@@ -62,6 +63,99 @@ function run(cmd) {
   return new Promise((resolve) => {
     exec(cmd, { timeout: 10000, maxBuffer: 1024 * 64 }, (err, stdout, stderr) => {
       resolve((stdout || '') + (stderr ? '\n' + stderr : '') + (err ? '\nError: ' + err.message : ''));
+    });
+  });
+}
+
+function getDashboard() {
+  return new Promise((resolve) => {
+    const load = os.loadavg();
+    const cpus = os.cpus();
+    const cpuCores = cpus.map(c => {
+      const total = Object.values(c.times).reduce((a, b) => a + b, 0);
+      return parseFloat(((1 - c.times.idle / total) * 100).toFixed(1));
+    });
+    const memTotal = os.totalmem();
+    const memFree = os.freemem();
+    const memUsed = memTotal - memFree;
+    const data = {
+      hostname: os.hostname(),
+      platform: os.platform(),
+      arch: os.arch(),
+      release: os.release(),
+      shell: SHELL,
+      cpuCount: cpus.length,
+      cpuModel: cpus[0].model.trim(),
+      cpuCores,
+      cpuLoad: parseFloat((load[0] / cpus.length * 100).toFixed(1)),
+      memUsage: parseFloat((memUsed / memTotal * 100).toFixed(1)),
+      memory: `${(memUsed / 1048576).toFixed(0)}MB / ${(memTotal / 1048576).toFixed(0)}MB`,
+      uptime: (s => { const d = s / 86400 | 0; const h = s % 86400 / 3600 | 0; const m = s % 3600 / 60 | 0; return `${d}d ${h}h ${m}m`; })(os.uptime()),
+      loadavg: load.map(v => v.toFixed(2)).join(', '),
+    };
+    exec('df -h / | awk \'NR==2{print $3"/"$2" ("$5")"}\'', { timeout: 3000 }, (e, o) => {
+      if (!e && o) {
+        const m = o.trim().match(/\(([^)]+)\)/);
+        data.diskUsage = m ? parseFloat(m[1]) : 0;
+        data.disk = o.trim();
+      }
+      resolve(data);
+    });
+  });
+}
+
+function getFiles(dir) {
+  return new Promise((resolve) => {
+    fs.readdir(dir, { withFileTypes: true }, (err, entries) => {
+      if (err) { resolve([]); return; }
+      const out = []; let n = entries.length || 1;
+      if (!n) { resolve(out); return; }
+      for (const e of entries) {
+        const fp = path.join(dir, e.name);
+        fs.stat(fp, (err, st) => {
+          out.push({
+            name: e.name,
+            type: e.isDirectory() ? 'dir' : (e.isSymbolicLink() ? 'link' : 'file'),
+            size: st && !e.isDirectory() ? st.size : 0,
+            mode: st ? st.mode.toString(8).slice(-3) : '---',
+            date: st ? st.mtime.toISOString().slice(0, 19).replace('T', ' ') : '',
+          });
+          if (!--n) resolve(out);
+        });
+      }
+    });
+  });
+}
+
+function getProcesses() {
+  return new Promise((resolve) => {
+    exec('ps -eo pid,user,%cpu,%mem,rss,args --sort=-%cpu --no-headers 2>/dev/null | head -100', { timeout: 5000, maxBuffer: 131072 }, (err, stdout) => {
+      if (err) { resolve([]); return; }
+      resolve(stdout.trim().split('\n').filter(Boolean).map(line => {
+        const p = line.trim().split(/\s+/);
+        return { pid: parseInt(p[0]) || 0, user: p[1] || '', cpu: parseFloat(p[2]) || 0, mem: parseFloat(p[3]) || 0, rss: parseInt(p[4]) || 0, command: p.slice(5).join(' ') || '' };
+      }));
+    });
+  });
+}
+
+function getServices() {
+  return new Promise((resolve) => {
+    exec('systemctl list-units --type=service --all --no-pager --no-legend 2>/dev/null | head -100', { timeout: 5000, maxBuffer: 131072 }, (err, stdout) => {
+      if (err || !stdout.trim()) {
+        exec('service --status-all 2>/dev/null', { timeout: 5000 }, (e, o) => {
+          if (e || !o) { resolve([]); return; }
+          resolve(o.trim().split('\n').filter(Boolean).map(line => {
+            const m = line.match(/\[(\+|\-|\?)\]\s+(.+)/);
+            return { name: m ? m[2] : line, status: m ? (m[1] === '+' ? 'running' : 'stopped') : 'unknown' };
+          }));
+        });
+        return;
+      }
+      resolve(stdout.trim().split('\n').filter(Boolean).map(line => {
+        const p = line.trim().split(/\s+/);
+        return { name: p[0] || '', status: p[3] || 'unknown', description: p.slice(4).join(' ') || '' };
+      }));
     });
   });
 }
@@ -121,7 +215,29 @@ wss.on('connection', (ws) => {
           break;
         }
         case 'create': createTerminal(ws); break;
+        case 'dashboard':
+          getDashboard().then(data => send(ws, { type: 'dashboard', data }));
+          break;
+        case 'files':
+          getFiles(msg.path || '.').then(entries => send(ws, { type: 'files', path: msg.path || '.', entries }));
+          break;
+        case 'processes':
+          getProcesses().then(list => send(ws, { type: 'processes', list }));
+          break;
+        case 'services':
+          getServices().then(list => send(ws, { type: 'services', list }));
+          break;
         case 'close': killTerminal(msg.id); break;
+        case 'kill':
+          exec('kill ' + msg.pid, { timeout: 3000 }, (err) => {
+            send(ws, { type: 'kill-result', pid: msg.pid, success: !err, error: err ? err.message : null });
+          });
+          break;
+        case 'service':
+          exec((msg.action === 'stop' ? 'systemctl stop ' : 'systemctl start ') + msg.name + ' 2>/dev/null || ' + (msg.action === 'stop' ? 'service ' : 'service ') + msg.name + ' ' + msg.action + ' 2>/dev/null', { timeout: 10000 }, (err) => {
+            send(ws, { type: 'service-result', name: msg.name, action: msg.action, success: !err, error: err ? err.message : null });
+          });
+          break;
         case 'cmd': {
           run(msg.command).then((out) => send(ws, { type: 'cmdout', id: msg.id || 0, data: out }));
           break;
