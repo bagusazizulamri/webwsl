@@ -1,6 +1,6 @@
 # WebWSL
 
-<div align="right">
+<div align="center">
   <a href="README_ID.md"><b>🌐 Baca dalam Bahasa Indonesia</b></a>
 </div>
 
