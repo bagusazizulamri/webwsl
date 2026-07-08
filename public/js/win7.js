@@ -359,6 +359,48 @@ const Win7 = {
     }, 100);
   },
 
+  _handleFileAction(action, path, type) {
+    if (!path) return;
+    switch (action) {
+      case 'file-open':
+        if (type === 'dir' && window.send) {
+          const addr = document.querySelector('#win7-win-files .win7-explorer-addr');
+          if (addr) Win7.fileHistory.push(addr.value);
+          window.send({ type: 'files', path });
+        }
+        break;
+      case 'file-copy':
+        Win7._clipboard = { action: 'copy', path };
+        break;
+      case 'file-cut':
+        Win7._clipboard = { action: 'cut', path };
+        break;
+      case 'file-rename': {
+        const name = path.split('/').pop();
+        const newName = prompt('Rename:', name);
+        if (newName && newName !== name && window.send) {
+          const parent = path.replace(/\/[^/]*$/, '');
+          window.send({ type: 'file-rename', path, newPath: parent + '/' + newName });
+        }
+        break;
+      }
+      case 'file-delete':
+        if (confirm('Delete ' + path + '?')) {
+          if (window.send) window.send({ type: 'file-delete', path });
+        }
+        break;
+      case 'file-props': {
+        const name = path.split('/').pop();
+        Win7.createWindow({
+          id: 'fileprops-' + Date.now(), title: name + ' Properties', icon: '\u{1F4DD}',
+          width: 380, height: 260,
+          content: '<div style="padding:20px;text-align:center;color:rgba(255,255,255,0.6)"><div style="font-size:36px;margin-bottom:8px">\u{1F4DD}</div><div style="font-weight:600;margin-bottom:4px">' + Win7.esc(name) + '</div><div style="font-size:11px;color:rgba(255,255,255,0.4)">Type: ' + (type === 'dir' ? 'File folder' : 'File') + '</div><div style="font-size:11px;color:rgba(255,255,255,0.3);margin-top:8px">Path: ' + Win7.esc(path) + '</div></div>',
+        });
+        break;
+      }
+    }
+  },
+
   _execRunCommand(cmd) {
     if (!cmd) return;
     const map = {
@@ -510,12 +552,47 @@ const Win7 = {
     return [
       '<div class="win7-explorer-toolbar">',
       '<button id="win7-explorer-back" title="Back">\u2190</button>',
+      '<button id="win7-explorer-forward" title="Forward" style="font-size:12px">\u2192</button>',
+      '<div class="win7-explorer-breadcrumbs" id="win7-explorer-breadcrumbs">' + this._breadcrumbHTML(path) + '</div>',
       '<input class="win7-explorer-addr" id="win7-explorer-addr" value="' + this.esc(path) + '" spellcheck="false">',
-      '<button id="win7-explorer-go" style="padding:3px 10px;background:rgba(88,166,255,0.2);border:none;border-radius:3px;color:#fff;cursor:pointer">Go</button>',
+      '<button id="win7-explorer-go" style="padding:3px 10px;background:rgba(88,166,255,0.2);border:none;border-radius:3px;color:#fff;cursor:pointer;font-size:11px">Go</button>',
+      '<div class="win7-explorer-views">',
+      '<button class="win7-view-btn active" data-view="icons" title="Icons">\u{1F5BC}</button>',
+      '<button class="win7-view-btn" data-view="list" title="List">\u2630</button>',
+      '<button class="win7-view-btn" data-view="details" title="Details">\u2261</button>',
       '</div>',
-      '<div class="files-grid" id="win7-files-grid" style="flex:1;overflow:auto;background:rgba(0,0,0,0.15);border:none;border-radius:0;padding:8px">',
+      '</div>',
+      '<div style="display:flex;flex:1;min-height:0">',
+      '<div class="win7-explorer-tree" id="win7-explorer-tree">',
+      '<div class="win7-tree-item" data-path="/" style="font-weight:600"><span class="win7-tree-arrow">\u25BC</span> \u{1F4BB} Computer</div>',
+      '<div class="win7-tree-item" data-path="/" style="padding-left:20px"><span class="win7-tree-arrow">\u25B6</span> \u{1F5FF} Local Disk (C:)</div>',
+      '<div class="win7-tree-item" data-path="/" style="padding-left:20px">\u{1F4C1} Root (/)</div>',
+      '<div class="win7-tree-item" data-path="' + this.esc(process.env.HOME || '/home') + '" style="padding-left:20px">\u{1F464} Home</div>',
+      '</div>',
+      '<div style="flex:1;display:flex;flex-direction:column;min-width:0">',
+      '<div class="win7-explorer-details-header" id="win7-explorer-header" style="display:none">',
+      '<span class="win7-exp-col col-name" data-sort="name">Name <span class="sort-arrow">\u25B2</span></span>',
+      '<span class="win7-exp-col col-size" data-sort="size">Size</span>',
+      '<span class="win7-exp-col col-type" data-sort="type">Type</span>',
+      '<span class="win7-exp-col col-date" data-sort="date">Date modified</span>',
+      '</div>',
+      '<div class="files-grid" id="win7-files-grid" style="flex:1;overflow:auto;background:rgba(0,0,0,0.15);border:none;border-radius:0;padding:8px" data-view="icons">',
       '<div class="empty-msg" style="color:rgba(255,255,255,0.4)">Loading...</div></div>',
+      '</div></div>',
+      '<div class="win7-explorer-status" id="win7-explorer-status" style="padding:2px 8px;background:rgba(0,0,0,0.15);border-top:1px solid rgba(255,255,255,0.05);font-size:10px;color:rgba(255,255,255,0.4)"></div>',
     ].join('');
+  },
+
+  _breadcrumbHTML(path) {
+    if (!path || path === '/') return '<span class="win7-bc-item" data-path="/">\u{1F4BB} Computer</span>';
+    const parts = path.replace(/^\/?/, '').split('/').filter(Boolean);
+    let acc = '';
+    let h = '<span class="win7-bc-item" data-path="/">\u{1F4BB}</span>';
+    for (const p of parts) {
+      acc += '/' + p;
+      h += '<span class="win7-bc-sep">\u203A</span><span class="win7-bc-item" data-path="' + this.esc(acc) + '">' + this.esc(p) + '</span>';
+    }
+    return h;
   },
 
   taskManagerHTML() {
@@ -761,30 +838,80 @@ const Win7 = {
     const addr = body.querySelector('.win7-explorer-addr');
     if (addr) addr.value = m.path;
 
+    const bc = body.querySelector('#win7-explorer-breadcrumbs');
+    if (bc) bc.innerHTML = this._breadcrumbHTML(m.path);
+
     const grid = body.querySelector('#win7-files-grid');
     if (!grid) return;
 
-    const isRoot = m.path === '/';
-    const parent = isRoot ? '/' : m.path.replace(/\/+$/, '').replace(/\/[^/]*$/, '') || '/';
-    let h = '';
-    if (!isRoot) {
-      h += '<div class="file-item file-up-item" data-path="' + parent.replace(/"/g, '&quot;') + '">'
-        + '<div class="file-icon">\u2190</div><div class="file-name">..</div></div>';
-    }
+    const view = grid.dataset.view || 'icons';
     const entries = Array.isArray(m.entries) ? m.entries : [];
-    for (const e of entries) {
-      const path = (m.path.replace(/\/$/, '') + '/' + e.name).replace(/"/g, '&quot;');
-      const icon = this.getFileIcon(e.name, e.type);
-      const cls = e.type === 'dir' ? 'file-folder' : '';
-      h += '<div class="file-item ' + cls + '" data-path="' + path + '" data-type="' + e.type + '">';
-      h += '<div class="file-icon">' + icon + '</div>';
-      h += '<div class="file-name">' + this.esc(e.name) + (e.type === 'dir' ? '/' : '') + '</div>';
-      if (e.type !== 'dir') {
-        h += '<div class="file-size-sm" style="color:rgba(255,255,255,0.4)">' + this.fmtSize(e.size) + '</div>';
-      }
-      h += '</div>';
+
+    const statusEl = document.getElementById('win7-explorer-status');
+    if (statusEl) {
+      const dirs = entries.filter(e => e.type === 'dir').length;
+      const files = entries.filter(e => e.type !== 'dir').length;
+      statusEl.textContent = dirs + ' folder(s), ' + files + ' file(s)';
     }
-    grid.innerHTML = h || '<div class="empty-msg" style="color:rgba(255,255,255,0.4)">Empty directory</div>';
+
+    if (view === 'icons') {
+      const isRoot = m.path === '/';
+      const parent = isRoot ? '/' : m.path.replace(/\/+$/, '').replace(/\/[^/]*$/, '') || '/';
+      let h = '';
+      if (!isRoot) {
+        h += '<div class="file-item file-up-item" data-path="' + parent.replace(/"/g, '&quot;') + '">'
+          + '<div class="file-icon">\u2190</div><div class="file-name">..</div></div>';
+      }
+      for (const e of entries) {
+        const path = (m.path.replace(/\/$/, '') + '/' + e.name).replace(/"/g, '&quot;');
+        const icon = this.getFileIcon(e.name, e.type);
+        h += '<div class="file-item ' + (e.type === 'dir' ? 'file-folder' : '') + '" data-path="' + path + '" data-type="' + e.type + '">';
+        h += '<div class="file-icon">' + icon + '</div>';
+        h += '<div class="file-name">' + this.esc(e.name) + (e.type === 'dir' ? '/' : '') + '</div>';
+        if (e.type !== 'dir') {
+          h += '<div class="file-size-sm">' + this.fmtSize(e.size) + '</div>';
+        }
+        h += '</div>';
+      }
+      grid.innerHTML = h || '<div class="empty-msg" style="color:rgba(255,255,255,0.4)">Empty directory</div>';
+    } else if (view === 'list') {
+      let h = '<div style="display:flex;flex-direction:column;gap:2px">';
+      for (const e of entries) {
+        const path = (m.path.replace(/\/$/, '') + '/' + e.name).replace(/"/g, '&quot;');
+        const icon = this.getFileIcon(e.name, e.type);
+        h += '<div class="win7-file-list-item" data-path="' + path + '" data-type="' + e.type + '">'
+          + '<span class="win7-fl-icon">' + icon + '</span>'
+          + '<span class="win7-fl-name">' + this.esc(e.name) + '</span>'
+          + '<span class="win7-fl-size">' + (e.type === 'dir' ? '&lt;DIR&gt;' : this.fmtSize(e.size)) + '</span>'
+          + '<span class="win7-fl-date">' + (e.date || '') + '</span>'
+          + '</div>';
+      }
+      grid.innerHTML = h || '<div class="empty-msg">Empty directory</div>';
+    } else if (view === 'details') {
+      const sortKey = grid.dataset.sortKey || 'name';
+      const sortDir = grid.dataset.sortDir || 'asc';
+      const sorted = [...entries].sort((a, b) => {
+        let va = a[sortKey] || '', vb = b[sortKey] || '';
+        if (sortKey === 'size') { va = va || 0; vb = vb || 0; }
+        else { va = String(va).toLowerCase(); vb = String(vb).toLowerCase(); }
+        if (va < vb) return sortDir === 'asc' ? -1 : 1;
+        if (va > vb) return sortDir === 'asc' ? 1 : -1;
+        return 0;
+      });
+      let h = '<div style="display:flex;flex-direction:column">';
+      for (const e of sorted) {
+        const path = (m.path.replace(/\/$/, '') + '/' + e.name).replace(/"/g, '&quot;');
+        const icon = this.getFileIcon(e.name, e.type);
+        h += '<div class="win7-file-detail-item" data-path="' + path + '" data-type="' + e.type + '">'
+          + '<span class="win7-fd-icon">' + icon + '</span>'
+          + '<span class="win7-fd-name">' + this.esc(e.name) + '</span>'
+          + '<span class="win7-fd-size">' + (e.type === 'dir' ? '' : this.fmtSize(e.size)) + '</span>'
+          + '<span class="win7-fd-type">' + (e.type === 'dir' ? 'File folder' : (e.name.includes('.') ? (e.name.split('.').pop().toUpperCase() + ' File') : 'File')) + '</span>'
+          + '<span class="win7-fd-date">' + (e.date || '') + '</span>'
+          + '</div>';
+      }
+      grid.innerHTML = h || '<div class="empty-msg">Empty directory</div>';
+    }
   },
 
   getFileIcon(name, type) {
@@ -1130,6 +1257,38 @@ overlay.addEventListener('mousedown', (e) => {
     return;
   }
 
+  /* ── File Explorer: Breadcrumb ── */
+  const bcItem = e.target.closest('.win7-bc-item');
+  if (bcItem && bcItem.dataset.path) {
+    if (window.send) {
+      Win7.fileHistory.push(document.querySelector('#win7-win-files .win7-explorer-addr')?.value || '.');
+      window.send({ type: 'files', path: bcItem.dataset.path });
+    }
+    return;
+  }
+
+  /* ── File Explorer: Tree item ── */
+  const treeItem = e.target.closest('.win7-tree-item');
+  if (treeItem && treeItem.dataset.path) {
+    const addr = document.querySelector('#win7-win-files .win7-explorer-addr');
+    if (addr && window.send) {
+      Win7.fileHistory.push(addr.value);
+      window.send({ type: 'files', path: treeItem.dataset.path });
+      addr.value = treeItem.dataset.path;
+    }
+    return;
+  }
+
+  /* ── File Explorer: Tree arrow toggle ── */
+  const treeArrow = e.target.closest('.win7-tree-arrow');
+  if (treeArrow) {
+    const parent = treeArrow.closest('.win7-tree-item');
+    if (parent) {
+      treeArrow.textContent = treeArrow.textContent === '\u25B6' ? '\u25BC' : '\u25B6';
+    }
+    return;
+  }
+
   if (e.target.closest('#win7-explorer-go') || e.target.closest('.win7-explorer-go')) {
     const addr = document.querySelector('#win7-win-files .win7-explorer-addr');
     if (addr && window.send) {
@@ -1139,12 +1298,75 @@ overlay.addEventListener('mousedown', (e) => {
     return;
   }
 
+  /* ── File Explorer: Back ── */
   if (e.target.closest('#win7-explorer-back')) {
     const addr = document.querySelector('#win7-win-files .win7-explorer-addr');
     if (addr && window.send) {
       const prev = Win7.fileHistory.length ? Win7.fileHistory.pop() : '.';
       window.send({ type: 'files', path: prev });
       addr.value = prev;
+    }
+    return;
+  }
+
+  /* ── File Explorer: Forward ── */
+  if (e.target.closest('#win7-explorer-forward')) {
+    const addr = document.querySelector('#win7-win-files .win7-explorer-addr');
+    if (addr && window.send) {
+      window.send({ type: 'files', path: addr.value });
+    }
+    return;
+  }
+
+  /* ── File Explorer: View mode toggle ── */
+  const viewBtn = e.target.closest('.win7-view-btn');
+  if (viewBtn && viewBtn.dataset.view) {
+    const parent = viewBtn.closest('.win7-window');
+    if (parent) {
+      parent.querySelectorAll('.win7-view-btn').forEach(b => b.classList.remove('active'));
+      viewBtn.classList.add('active');
+      const grid = parent.querySelector('#win7-files-grid');
+      if (grid) {
+        grid.dataset.view = viewBtn.dataset.view;
+        grid.className = 'files-grid';
+        grid.classList.add('view-' + viewBtn.dataset.view);
+        const header = parent.querySelector('#win7-explorer-header');
+        if (header) header.style.display = viewBtn.dataset.view === 'details' ? 'flex' : 'none';
+        const addr = parent.querySelector('.win7-explorer-addr');
+        if (addr && window.send) window.send({ type: 'files', path: addr.value });
+      }
+    }
+    return;
+  }
+
+  /* ── File Explorer: Sort column click ── */
+  const sortCol = e.target.closest('.win7-exp-col');
+  if (sortCol && sortCol.dataset.sort) {
+    const grid = document.querySelector('#win7-files-grid');
+    if (grid) {
+      const key = sortCol.dataset.sort;
+      const same = grid.dataset.sortKey === key;
+      grid.dataset.sortDir = same && grid.dataset.sortDir === 'asc' ? 'desc' : 'asc';
+      grid.dataset.sortKey = key;
+      sortCol.closest('.win7-explorer-details-header')?.querySelectorAll('.win7-exp-col').forEach(c => {
+        c.querySelector('.sort-arrow')?.remove();
+      });
+      const arrow = document.createElement('span');
+      arrow.className = 'sort-arrow';
+      arrow.textContent = grid.dataset.sortDir === 'asc' ? ' \u25B2' : ' \u25BC';
+      sortCol.appendChild(arrow);
+      const addr = document.querySelector('#win7-win-files .win7-explorer-addr');
+      if (addr && window.send) window.send({ type: 'files', path: addr.value });
+    }
+    return;
+  }
+
+  /* ── File Explorer: New folder ── */
+  if (e.target.closest('#win7-explorer-new-folder')) {
+    const folderName = prompt('Folder name:');
+    if (folderName && window.send) {
+      const addr = document.querySelector('#win7-win-files .win7-explorer-addr');
+      window.send({ type: 'file-mkdir', path: (addr ? addr.value : '.') + '/' + folderName });
     }
     return;
   }
@@ -1321,6 +1543,20 @@ overlay.addEventListener('contextmenu', (e) => {
     menu.style.top = (e.clientY - 160) + 'px';
     menu.classList.add('active');
   }
+  /* ── File context menu ── */
+  const fileItem = e.target.closest('.file-item, .win7-file-list-item, .win7-file-detail-item');
+  if (fileItem && !fileItem.classList.contains('file-up-item') && fileItem.dataset.path) {
+    e.preventDefault();
+    Win7._fileCtxPath = fileItem.dataset.path;
+    Win7._fileCtxType = fileItem.dataset.type || 'file';
+    Win7._fileCtxEl = fileItem;
+    const menu = document.getElementById('win7-file-ctx');
+    if (menu) {
+      menu.style.left = Math.min(e.clientX, window.innerWidth - 200) + 'px';
+      menu.style.top = Math.min(e.clientY, window.innerHeight - 200) + 'px';
+      menu.classList.add('active');
+    }
+  }
 });
 
 overlay.addEventListener('click', (e) => {
@@ -1331,6 +1567,10 @@ overlay.addEventListener('click', (e) => {
   const tctxMenu = document.getElementById('win7-taskbar-ctx');
   if (tctxMenu && tctxMenu.classList.contains('active') && !e.target.closest('.win7-taskbar-ctx')) {
     tctxMenu.classList.remove('active');
+  }
+  const fctxMenu = document.getElementById('win7-file-ctx');
+  if (fctxMenu && fctxMenu.classList.contains('active') && !e.target.closest('.win7-file-ctx')) {
+    fctxMenu.classList.remove('active');
   }
 
   const ctxItem = e.target.closest('.win7-ctx-item');
@@ -1373,6 +1613,12 @@ overlay.addEventListener('click', (e) => {
         });
         return;
       }
+      return;
+    }
+    if (action.startsWith('file-')) {
+      Win7._handleFileAction(action, Win7._fileCtxPath, Win7._fileCtxType);
+      Win7._fileCtxPath = null;
+      Win7._fileCtxType = null;
       return;
     }
     if (action === 'personalize') {
@@ -1479,6 +1725,7 @@ overlay.addEventListener('keydown', (e) => {
       Win7.hideContextMenu();
     }
     document.getElementById('win7-taskbar-ctx')?.classList.remove('active');
+    document.getElementById('win7-file-ctx')?.classList.remove('active');
   }
 });
 

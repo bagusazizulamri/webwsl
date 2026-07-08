@@ -238,6 +238,21 @@ wss.on('connection', (ws) => {
             send(ws, { type: 'service-result', name: msg.name, action: msg.action, success: !err, error: err ? err.message : null });
           });
           break;
+        case 'file-delete':
+          exec('rm -rf ' + JSON.stringify(msg.path), { timeout: 5000 }, (err) => {
+            send(ws, { type: 'file-result', action: 'delete', path: msg.path, success: !err, error: err ? err.message : null });
+          });
+          break;
+        case 'file-rename':
+          exec('mv ' + JSON.stringify(msg.path) + ' ' + JSON.stringify(msg.newPath), { timeout: 5000 }, (err) => {
+            send(ws, { type: 'file-result', action: 'rename', path: msg.path, newPath: msg.newPath, success: !err, error: err ? err.message : null });
+          });
+          break;
+        case 'file-mkdir':
+          exec('mkdir -p ' + JSON.stringify(msg.path), { timeout: 5000 }, (err) => {
+            send(ws, { type: 'file-result', action: 'mkdir', path: msg.path, success: !err, error: err ? err.message : null });
+          });
+          break;
         case 'cmd': {
           run(msg.command).then((out) => send(ws, { type: 'cmdout', id: msg.id || 0, data: out }));
           break;
