@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>WebWSL</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@6.0.0/css/xterm.css">
+<link rel="stylesheet" href="css/style.css">
+<script type="importmap">
+{
+  "imports": {
+    "@xterm/xterm": "https://cdn.jsdelivr.net/npm/@xterm/xterm@6.0.0/lib/xterm.mjs",
+    "@xterm/addon-fit": "https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.11.0/lib/addon-fit.mjs"
+  }
+}
+</script>
+</head>
+<body>
+<div id="app">
+  <aside id="sidebar">
+    <div class="sidebar-h">
+      <div class="logo"><span class="logo-icon">&gt;_</span><span class="logo-t">WebWSL</span></div>
+      <div class="status"><span class="dot" id="dot"></span><span id="status-lbl">Connecting...</span></div>
+    </div>
+
+    <nav class="nav" id="nav">
+      <button class="nav-btn active" data-panel="terminal">&#x3E;&#x5F; Terminal</button>
+      <button class="nav-btn" data-panel="dashboard">&#x2630; Dash</button>
+      <button class="nav-btn" data-panel="files">&#x1F4C1; Files</button>
+      <button class="nav-btn" data-panel="processes">&#x2699; Proc</button>
+      <button class="nav-btn" data-panel="services">&#x1F527; Svc</button>
+    </nav>
+
+    <div class="section">
+      <div class="section-t">Sessions</div>
+      <div id="session-list"></div>
+      <button class="new-btn" id="new-btn">+ New</button>
+    </div>
+
+    <div class="quick">
+      <button class="q-btn" data-cmd="apt update && apt upgrade -y">apt</button>
+      <button class="q-btn" data-cmd="npm install">npm</button>
+      <button class="q-btn" data-cmd="git status">git</button>
+      <button class="q-btn" data-cmd="python3 --version">py</button>
+      <button class="q-btn" data-cmd="node --version">node</button>
+      <button class="q-btn" data-cmd="clear">cls</button>
+    </div>
+  </aside>
+
+  <main id="main">
+    <div id="panel-terminal" class="panel active"><div class="term-c" id="term-c"></div></div>
+
+    <div id="panel-dashboard" class="panel">
+      <div class="tool-panel">
+        <div class="tool-h"><h1>Dashboard</h1><button class="btn-sm" data-cmd="sysinfo">&#x21bb;</button></div>
+        <div class="dash-g" id="dash-g">
+          <div class="dash-c"><div class="c-l">Hostname</div><div class="c-v" id="info-hostname">-</div></div>
+          <div class="dash-c"><div class="c-l">Platform</div><div class="c-v" id="info-platform">-</div></div>
+          <div class="dash-c"><div class="c-l">Arch</div><div class="c-v" id="info-arch">-</div></div>
+          <div class="dash-c"><div class="c-l">Release</div><div class="c-v" id="info-release">-</div></div>
+          <div class="dash-c"><div class="c-l">Shell</div><div class="c-v" id="info-shell">-</div></div>
+          <div class="dash-c"><div class="c-l">CPUs</div><div class="c-v" id="info-cpus">-</div></div>
+          <div class="dash-c"><div class="c-l">Memory</div><div class="c-v" id="info-mem">-</div></div>
+          <div class="dash-c"><div class="c-l">Uptime</div><div class="c-v" id="info-uptime">-</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="panel-files" class="panel">
+      <div class="tool-panel">
+        <div class="tool-h"><h1>Files</h1>
+          <div class="tool-inp"><input id="fp" class="inp" value="."><button class="btn-sm" data-cmd="files">Go</button></div>
+        </div>
+        <pre class="out" id="out-files">Click Go to list files...</pre>
+      </div>
+    </div>
+
+    <div id="panel-processes" class="panel">
+      <div class="tool-panel">
+        <div class="tool-h"><h1>Processes</h1><button class="btn-sm" data-cmd="procs">&#x21bb;</button></div>
+        <pre class="out" id="out-procs">Click Refresh to load processes...</pre>
+      </div>
+    </div>
+
+    <div id="panel-services" class="panel">
+      <div class="tool-panel">
+        <div class="tool-h"><h1>Services</h1><button class="btn-sm" data-cmd="svcs">&#x21bb;</button></div>
+        <pre class="out" id="out-svcs">Click Refresh to load services...</pre>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
