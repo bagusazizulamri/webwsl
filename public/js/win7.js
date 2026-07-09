@@ -5,7 +5,6 @@ const Win7 = {
   windowOrder: [],
   dragData: null,
   resizeData: null,
-  snapData: null,
   startMenuOpen: false,
   clockInterval: null,
   terminalAttached: false,
@@ -25,6 +24,7 @@ const Win7 = {
   _peekTimer: null,
   _snapRegion: null,
   _desktopSel: null,
+  _desktopIconPositions: {},
 
   SVG: {
     start: '<svg viewBox="0 0 48 48" width="22" height="22"><path fill="currentColor" d="M24 4L4 24l20 20 20-20z"/><path fill="#fff" d="M24 8L8 24l16 16 16-16z" opacity="0.25"/></svg>',
@@ -46,10 +46,7 @@ const Win7 = {
     link: '<svg viewBox="0 0 48 48" width="32" height="32"><path d="M36 24l-8 8-8-8 8-8z" fill="#e8e8e8" stroke="#999" stroke-width="1.5"/><path d="M28 20V10M28 38V32" stroke="#999" stroke-width="1.5" fill="none"/></svg>',
   },
 
-  toggle() {
-    if (this.active) this.hide();
-    else this.show();
-  },
+  toggle() { if (this.active) this.hide(); else this.show(); },
 
   show() {
     this.active = true;
@@ -66,6 +63,7 @@ const Win7 = {
     this._startRefreshTimers();
     this._playSound('startup');
     if (this._pinnedApps.length === 0) this._pinnedApps = ['terminal', 'dashboard', 'files'];
+    this._loadDesktopIconPositions();
   },
 
   hide() {
@@ -81,16 +79,17 @@ const Win7 = {
     for (const id of Object.keys(this.windows)) this.closeWindow(id, true);
     this.hideContextMenu();
     this.hideCalendar();
+    this._closeTrayPopup();
     this._playSound('shutdown');
   },
 
+  /* ═══ WINDOW ═══ */
   createWindow(opts) {
     if (this.windows[opts.id]) {
       this.focusWindow(opts.id);
       if (this.windows[opts.id].minimized) this.restoreWindow(opts.id);
       return this.windows[opts.id];
     }
-
     const defaults = {
       width: 500, height: 350, icon: '\u{1F4C4}',
       x: 80 + (Object.keys(this.windows).length * 28) % 280,
@@ -98,15 +97,12 @@ const Win7 = {
       content: '', onClose: null, resizable: true, modal: false,
     };
     const o = { ...defaults, ...opts };
-
     const container = document.getElementById('win7-windows-container');
     const el = document.createElement('div');
     el.className = 'win7-window show';
     el.id = 'win7-win-' + o.id;
     el.style.cssText = 'width:' + o.width + 'px;height:' + o.height + 'px;left:' + o.x + 'px;top:' + o.y + 'px;z-index:' + (++this.windowZIndex);
-
     const iconSvg = this._getWinIconSvg(o.id, o.icon);
-
     el.innerHTML = [
       '<div class="win7-win-titlebar" data-win="' + o.id + '">',
       '<span class="win7-win-icon">' + iconSvg + '</span>',
@@ -119,37 +115,30 @@ const Win7 = {
       '<div class="win7-win-body" data-win="' + o.id + '">' + o.content + '</div>',
       o.resizable ? '<div class="win7-win-resize-handle n" data-win="' + o.id + '" data-edge="n"></div><div class="win7-win-resize-handle s" data-win="' + o.id + '" data-edge="s"></div><div class="win7-win-resize-handle w" data-win="' + o.id + '" data-edge="w"></div><div class="win7-win-resize-handle e" data-win="' + o.id + '" data-edge="e"></div><div class="win7-win-resize-handle nw" data-win="' + o.id + '" data-edge="nw"></div><div class="win7-win-resize-handle ne" data-win="' + o.id + '" data-edge="ne"></div><div class="win7-win-resize-handle sw" data-win="' + o.id + '" data-edge="sw"></div><div class="win7-win-resize-handle se" data-win="' + o.id + '" data-edge="se"></div>' : '',
     ].join('');
-
     if (o.modal) {
-      const overlay = document.createElement('div');
-      overlay.className = 'win7-modal-overlay';
-      overlay.style.cssText = 'position:absolute;inset:0;z-index:' + (this.windowZIndex - 1) + ';background:rgba(0,0,0,0.02)';
-      container.appendChild(overlay);
-      el.dataset.modalOverlay = overlay;
+      const ov = document.createElement('div');
+      ov.className = 'win7-modal-overlay';
+      ov.style.cssText = 'position:absolute;inset:0;z-index:' + (this.windowZIndex - 1) + ';background:rgba(0,0,0,0.02)';
+      container.appendChild(ov);
+      el.dataset.modalOverlay = ov;
     }
-
     setTimeout(() => el.classList.remove('show'), 200);
-
     container.appendChild(el);
-
     const winObj = { id: o.id, el, minimized: false, maximized: false, normalRect: null, title: o.title, icon: o.icon, onClose: o.onClose, type: o.id === 'terminal' ? 'terminal' : 'app', modal: o.modal };
     this.windows[o.id] = winObj;
     this.windowOrder.push(o.id);
     this.updateTaskbar();
     if (this.startMenuOpen) this.toggleStartMenu();
-
     const dataTypes = { dashboard: 'dashboard', files: 'files', processes: 'processes', services: 'services' };
     if (dataTypes[o.id] && window.send) {
       window.send(dataTypes[o.id] === 'files' ? { type: 'files', path: '.' } : { type: dataTypes[o.id] });
     }
-
     return winObj;
   },
 
   _getWinIconSvg(id, icon) {
     const svgs = { terminal: this.SVG.terminal, dashboard: this.SVG.dashboard, files: this.SVG.folder, taskmgr: this.SVG.settings, services: this.SVG.services, computer: this.SVG.computer };
-    if (svgs[id]) return svgs[id];
-    return '<span style="font-size:14px">' + icon + '</span>';
+    return svgs[id] || '<span style="font-size:14px">' + icon + '</span>';
   },
 
   closeWindow(id, silent) {
@@ -159,12 +148,8 @@ const Win7 = {
     if (!silent) {
       w.el.classList.add('hide');
       setTimeout(() => { if (w.el) w.el.remove(); }, 100);
-    } else {
-      if (w.el) w.el.remove();
-    }
-    if (w.modal && w.el.dataset.modalOverlay) {
-      w.el.dataset.modalOverlay.remove();
-    }
+    } else { if (w.el) w.el.remove(); }
+    if (w.modal && w.el.dataset.modalOverlay) w.el.dataset.modalOverlay.remove();
     delete this.windows[id];
     const idx = this.windowOrder.indexOf(id);
     if (idx > -1) this.windowOrder.splice(idx, 1);
@@ -177,15 +162,9 @@ const Win7 = {
     if (!w || w.minimized) return;
     if (id === 'terminal' && this.terminalAttached) this._detachTerminal();
     w.minimized = true;
-    if (!w.normalRect) {
-      const s = w.el.style;
-      w.normalRect = { width: s.width, height: s.height, left: s.left, top: s.top };
-    }
+    if (!w.normalRect) { const s = w.el.style; w.normalRect = { width: s.width, height: s.height, left: s.left, top: s.top }; }
     w.el.classList.add('minimizing');
-    setTimeout(() => {
-      w.el.style.display = 'none';
-      w.el.classList.remove('minimizing');
-    }, 120);
+    setTimeout(() => { w.el.style.display = 'none'; w.el.classList.remove('minimizing'); }, 120);
     this.updateTaskbar();
     this._playSound('minimize');
   },
@@ -195,10 +174,7 @@ const Win7 = {
     if (!w) return;
     if (w.maximized) { this.restoreWindow(id); return; }
     w.maximized = true;
-    if (!w.normalRect) {
-      const s = w.el.style;
-      w.normalRect = { width: s.width, height: s.height, left: s.left, top: s.top };
-    }
+    if (!w.normalRect) { const s = w.el.style; w.normalRect = { width: s.width, height: s.height, left: s.left, top: s.top }; }
     if (id === 'terminal' && this.terminalAttached) this._detachTerminal();
     const taskbar = document.getElementById('win7-taskbar');
     const tbH = taskbar ? taskbar.offsetHeight : 40;
@@ -216,10 +192,7 @@ const Win7 = {
     const w = this.windows[id];
     if (!w || !w.normalRect) return;
     const wasMinimized = w.minimized;
-    if (w.maximized) {
-      w.maximized = false;
-      w.el.classList.remove('maximized');
-    }
+    if (w.maximized) { w.maximized = false; w.el.classList.remove('maximized'); }
     w.minimized = false;
     const r = w.normalRect;
     w.el.classList.add('restoring');
@@ -230,6 +203,11 @@ const Win7 = {
     this.focusWindow(id);
     this.updateTaskbar();
     if (id === 'terminal') setTimeout(() => this._attachTerminal(), 100);
+  },
+
+  getActiveWindow() {
+    if (this.windowOrder.length === 0) return null;
+    return this.windows[this.windowOrder[this.windowOrder.length - 1]] || null;
   },
 
   focusWindow(id) {
@@ -250,9 +228,7 @@ const Win7 = {
   },
 
   _getActiveTermSession() {
-    if (window.__getSessions && window.__getActiveId) {
-      return window.__getSessions()[window.__getActiveId()];
-    }
+    if (window.__getSessions && window.__getActiveId) return window.__getSessions()[window.__getActiveId()];
     return null;
   },
 
@@ -264,10 +240,7 @@ const Win7 = {
       const w2 = this.windows[wid];
       if (w2 && !w2.minimized) {
         w2.minimized = true;
-        if (!w2.normalRect) {
-          const s = w2.el.style;
-          w2.normalRect = { width: s.width, height: s.height, left: s.left, top: s.top };
-        }
+        if (!w2.normalRect) { const s = w2.el.style; w2.normalRect = { width: s.width, height: s.height, left: s.left, top: s.top }; }
         w2.el.style.display = 'none';
       }
     }
@@ -282,19 +255,11 @@ const Win7 = {
     const tbH = taskbar ? taskbar.offsetHeight : 40;
     const dw = desktop.clientWidth;
     const dh = desktop.clientHeight - tbH;
-    if (w.maximized) {
-      w.el.style.cssText = 'width:;height:;left:;top:;right:;bottom:;';
-      w.el.classList.remove('maximized');
-      w.maximized = false;
-    }
+    if (w.maximized) { w.el.style.cssText = 'width:;height:;left:;top:;right:;bottom:;'; w.el.classList.remove('maximized'); w.maximized = false; }
     w.normalRect = w.normalRect || { width: w.el.style.width, height: w.el.style.height, left: w.el.style.left, top: w.el.style.top };
-    if (side === 'left') {
-      w.el.style.cssText = 'width:' + Math.floor(dw / 2) + 'px;height:' + dh + 'px;left:0;top:0;right:;bottom:;z-index:' + (++this.windowZIndex);
-    } else if (side === 'right') {
-      w.el.style.cssText = 'width:' + Math.floor(dw / 2) + 'px;height:' + dh + 'px;left:' + Math.floor(dw / 2) + 'px;top:0;right:;bottom:;z-index:' + (++this.windowZIndex);
-    } else if (side === 'top') {
-      this.maximizeWindow(id);
-    }
+    if (side === 'left') w.el.style.cssText = 'width:' + Math.floor(dw / 2) + 'px;height:' + dh + 'px;left:0;top:0;right:;bottom:;z-index:' + (++this.windowZIndex);
+    else if (side === 'right') w.el.style.cssText = 'width:' + Math.floor(dw / 2) + 'px;height:' + dh + 'px;left:' + Math.floor(dw / 2) + 'px;top:0;right:;bottom:;z-index:' + (++this.windowZIndex);
+    else if (side === 'top') this.maximizeWindow(id);
     this.focusWindow(id);
   },
 
@@ -304,12 +269,75 @@ const Win7 = {
     const desktop = document.getElementById('win7-desktop');
     const dw = desktop.clientWidth;
     const dh = desktop.clientHeight;
-    if (Math.abs(x - 0) < 4) return 'left';
+    if (Math.abs(x) < 4) return 'left';
     if (Math.abs(x - dw) < 4) return 'right';
-    if (Math.abs(y - 0) < 4) return 'top';
+    if (Math.abs(y) < 4) return 'top';
     return null;
   },
 
+  /* ═══ CASCADE / STACK / SIDE BY SIDE ═══ */
+  cascadeWindows() {
+    const wins = this.windowOrder.filter(id => this.windows[id] && !this.windows[id].minimized);
+    const taskbar = document.getElementById('win7-taskbar');
+    const tbH = taskbar ? taskbar.offsetHeight : 40;
+    let x = 30, y = 30;
+    for (const id of wins) {
+      const w = this.windows[id];
+      if (!w) continue;
+      if (w.maximized) { w.maximized = false; w.el.classList.remove('maximized'); }
+      w.minimized = false;
+      w.normalRect = { width: '500px', height: '350px', left: x + 'px', top: y + 'px' };
+      w.el.style.cssText = 'display:block;width:500px;height:350px;left:' + x + 'px;top:' + y + 'px;z-index:' + (++this.windowZIndex);
+      w.el.style.right = ''; w.el.style.bottom = '';
+      x += 30; y += 30;
+      if (y > 300) { x = 30; y = 30; }
+    }
+    if (wins.length) this.focusWindow(wins[wins.length - 1]);
+  },
+
+  stackWindows() {
+    const wins = this.windowOrder.filter(id => this.windows[id] && !this.windows[id].minimized);
+    if (!wins.length) return;
+    const taskbar = document.getElementById('win7-taskbar');
+    const tbH = taskbar ? taskbar.offsetHeight : 40;
+    const dh = window.innerHeight - tbH;
+    const dw = window.innerWidth;
+    const n = wins.length;
+    const h = Math.floor(dh / n);
+    wins.forEach((id, i) => {
+      const w = this.windows[id];
+      if (!w) return;
+      if (w.maximized) { w.maximized = false; w.el.classList.remove('maximized'); }
+      w.minimized = false;
+      w.normalRect = { width: dw + 'px', height: h + 'px', left: '0px', top: (i * h) + 'px' };
+      w.el.style.cssText = 'display:block;width:' + dw + 'px;height:' + h + 'px;left:0;top:' + (i * h) + 'px;z-index:' + (++this.windowZIndex);
+      w.el.style.right = ''; w.el.style.bottom = '';
+    });
+    if (wins.length) this.focusWindow(wins[wins.length - 1]);
+  },
+
+  sideBySideWindows() {
+    const wins = this.windowOrder.filter(id => this.windows[id] && !this.windows[id].minimized);
+    if (!wins.length) return;
+    const taskbar = document.getElementById('win7-taskbar');
+    const tbH = taskbar ? taskbar.offsetHeight : 40;
+    const dh = window.innerHeight - tbH;
+    const dw = window.innerWidth;
+    const n = wins.length;
+    const ww = Math.floor(dw / n);
+    wins.forEach((id, i) => {
+      const w = this.windows[id];
+      if (!w) return;
+      if (w.maximized) { w.maximized = false; w.el.classList.remove('maximized'); }
+      w.minimized = false;
+      w.normalRect = { width: ww + 'px', height: dh + 'px', left: (i * ww) + 'px', top: '0px' };
+      w.el.style.cssText = 'display:block;width:' + ww + 'px;height:' + dh + 'px;left:' + (i * ww) + 'px;top:0;z-index:' + (++this.windowZIndex);
+      w.el.style.right = ''; w.el.style.bottom = '';
+    });
+    if (wins.length) this.focusWindow(wins[wins.length - 1]);
+  },
+
+  /* ═══ TASKBAR ═══ */
   updateTaskbar() {
     const tb = document.getElementById('win7-taskbar-windows');
     if (!tb) return;
@@ -333,10 +361,10 @@ const Win7 = {
     const rect = btn.getBoundingClientRect();
     const popup = document.getElementById('win7-peek-popup');
     if (!popup) return;
-    popup.classList.add('active');
-    popup.style.cssText = 'left:' + (rect.left + rect.width / 2 - 80) + 'px;bottom:42px';
+    popup.style.display = 'block';
+    popup.style.cssText = 'left:' + (rect.left + rect.width / 2 - 70) + 'px;bottom:42px;display:block';
     popup.innerHTML = '<div class="win7-peek-item" data-win="' + id + '"><div class="win7-peek-thumb">' + this._getTaskbarIcon(id) + '</div><div>' + this.esc(w.title) + '</div></div>';
-    popup.onclick = () => { this.focusWindow(id); popup.classList.remove('active'); };
+    popup.onclick = () => { this.focusWindow(id); popup.style.display = 'none'; };
     this._peekTimer = null;
   },
 
@@ -344,27 +372,23 @@ const Win7 = {
     if (this._peekTimer) clearTimeout(this._peekTimer);
     this._peekTimer = setTimeout(() => {
       const popup = document.getElementById('win7-peek-popup');
-      if (popup) popup.classList.remove('active');
-    }, 200);
+      if (popup) popup.style.display = 'none';
+    }, 300);
   },
 
   _getTaskbarIcon(id) {
-    const icons = {
-      terminal: '\u26A1', dashboard: '\u{1F4CA}', files: '\u{1F4C1}',
-      taskmgr: '\u2699', services: '\u{1F527}',
-    };
+    const icons = { terminal: '\u26A1', dashboard: '\u{1F4CA}', files: '\u{1F4C1}', taskmgr: '\u2699', services: '\u{1F527}' };
     return icons[id] || '\u{1F4C4}';
   },
 
+  /* ═══ CLOCK & CALENDAR ═══ */
   updateClock() {
     const el = document.getElementById('win7-clock');
     if (!el) return;
     const now = new Date();
-    const hh = String(now.getHours()).padStart(2, '0');
-    const mm = String(now.getMinutes()).padStart(2, '0');
-    el.textContent = hh + ':' + mm;
+    el.textContent = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
     const gadgetTime = document.getElementById('win7-gadget-time');
-    if (gadgetTime) gadgetTime.textContent = hh + ':' + mm;
+    if (gadgetTime) gadgetTime.textContent = el.textContent;
     const gadgetDate = document.getElementById('win7-gadget-date');
     if (gadgetDate) {
       const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
@@ -392,22 +416,25 @@ const Win7 = {
     let calDays = '';
     for (let i = 0; i < firstDay; i++) calDays += '<span></span>';
     for (let d = 1; d <= lastDate; d++) {
-      calDays += '<span' + (d === today ? ' style="background:var(--w-blue);color:#fff;border-radius:2px"' : '') + '>' + d + '</span>';
+      calDays += '<span' + (d === today ? ' style="background:#0078d4;color:#fff;border-radius:2px"' : '') + '>' + d + '</span>';
     }
     const popup = document.createElement('div');
     popup.id = 'win7-calendar-popup';
     popup.style.cssText = 'position:fixed;z-index:10020;right:' + (window.innerWidth - rect.right) + 'px;bottom:42px;background:#f0f3f8;border:1px solid #b0b8c4;box-shadow:3px 3px 10px rgba(0,0,0,0.12);border-radius:3px;padding:8px;min-width:210px;font-size:11px;color:#1a3a6e';
     popup.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:6px;border-bottom:1px solid #d4d8de;margin-bottom:6px"><span style="font-weight:600">' + months[m] + ' ' + y + '</span><span style="font-size:18px;font-weight:300;color:rgba(0,0,0,0.3)">' + hh + ':' + mm + '</span></div><div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;text-align:center">' + days.map(d => '<span style="color:rgba(0,0,0,0.25);font-size:9px">' + d + '</span>').join('') + calDays + '</div>';
     document.getElementById('win7-overlay').appendChild(popup);
-    setTimeout(() => document.addEventListener('click', this._closeCalHandler = (e) => { if (!e.target.closest('#win7-calendar-popup') && !e.target.closest('#win7-clock')) { this.hideCalendar(); } }), 10);
+    setTimeout(() => {
+      const handler = (e) => { if (!e.target.closest('#win7-calendar-popup') && !e.target.closest('#win7-clock')) { this.hideCalendar(); document.removeEventListener('click', handler); } };
+      document.addEventListener('click', handler);
+    }, 10);
   },
 
   hideCalendar() {
     const p = document.getElementById('win7-calendar-popup');
     if (p) p.remove();
-    if (this._closeCalHandler) { document.removeEventListener('click', this._closeCalHandler); this._closeCalHandler = null; }
   },
 
+  /* ═══ SYSTEM TRAY ═══ */
   updateTray() {
     const n = document.getElementById('win7-tray-network');
     const v = document.getElementById('win7-tray-volume');
@@ -416,9 +443,49 @@ const Win7 = {
     if (n) { n.title = 'Network: Connected'; n.innerHTML = '\u{1F4F6}'; }
     if (v) { v.title = 'Volume: 100%'; v.innerHTML = '\u{1F50A}'; }
     if (p) { p.title = 'Power: AC'; p.innerHTML = '\u26A1'; }
-    if (a) { a.title = 'No issues'; a.innerHTML = '\u2691'; }
+    if (a) { a.title = 'Action Center'; a.innerHTML = '\u2691'; }
   },
 
+  _showTrayPopup(type) {
+    this._closeTrayPopup();
+    const map = {
+      network: { title: 'Network', icon: '\u{1F4F6}', content: '<div style="font-size:11px;color:rgba(0,0,0,0.4)">Connected to: WebWSL Network<br>IPv4: 127.0.0.1<br>Status: Online</div>' },
+      volume: { title: 'Volume', icon: '\u{1F50A}', content: '<div style="font-size:11px;color:rgba(0,0,0,0.4)"><div style="margin-bottom:6px">Speaker: 100%</div><div style="background:#e0e6ed;height:4px;border-radius:2px;position:relative"><div style="background:#0078d4;height:4px;width:80%;border-radius:2px"></div></div><div style="margin-top:8px;display:flex;gap:6px"><button data-action="mute" style="flex:1;padding:2px 6px;font-size:10px">Mute</button><button data-action="max" style="flex:1;padding:2px 6px;font-size:10px">100%</button></div></div>' },
+      power: { title: 'Power', icon: '\u26A1', content: '<div style="font-size:11px;color:rgba(0,0,0,0.4)">Power Source: AC<br>Battery: Not present<br>Power plan: Balanced</div>' },
+      action: { title: 'Action Center', icon: '\u2691', content: '<div style="font-size:11px;color:rgba(0,0,0,0.4)">No new notifications<br><div style="margin-top:8px"><button data-action="clear" style="padding:2px 10px;font-size:10px">Clear All</button></div></div>' },
+    };
+    const info = map[type];
+    if (!info) return;
+    const el = document.getElementById('win7-tray-' + type);
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const popup = document.createElement('div');
+    popup.id = 'win7-tray-popup';
+    popup.style.cssText = 'position:fixed;z-index:10020;right:' + (window.innerWidth - rect.right - 10) + 'px;bottom:42px;background:#f0f3f8;border:1px solid #b0b8c4;box-shadow:3px 3px 10px rgba(0,0,0,0.12);border-radius:3px;padding:10px;min-width:160px;font-size:11px;color:#1a3a6e';
+    popup.innerHTML = '<div style="font-weight:600;margin-bottom:6px;color:rgba(0,0,0,0.5)">' + info.icon + ' ' + info.title + '</div>' + info.content;
+    document.getElementById('win7-overlay').appendChild(popup);
+    popup.querySelectorAll('button').forEach(b => {
+      b.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (b.dataset.action === 'mute') { b.textContent = 'Unmute'; b.dataset.action = 'unmute'; }
+        else if (b.dataset.action === 'unmute') { b.textContent = 'Mute'; b.dataset.action = 'mute'; }
+        else if (b.dataset.action === 'max') { Win7._notify('Volume', 'Volume set to 100%'); }
+        else if (b.dataset.action === 'clear') { Win7._notify('Action Center', 'All notifications cleared'); }
+        this._closeTrayPopup();
+      });
+    });
+    setTimeout(() => {
+      const handler = (e) => { if (!e.target.closest('#win7-tray-popup') && !e.target.closest('[id^=win7-tray-]')) { this._closeTrayPopup(); document.removeEventListener('click', handler); } };
+      document.addEventListener('click', handler);
+    }, 10);
+  },
+
+  _closeTrayPopup() {
+    const p = document.getElementById('win7-tray-popup');
+    if (p) p.remove();
+  },
+
+  /* ═══ ALT+TAB ═══ */
   showAltTab(dir) {
     const visible = this.windowOrder.filter(id => this.windows[id] && !this.windows[id].minimized);
     if (visible.length < 2 && !this.altTabActive) return;
@@ -489,8 +556,7 @@ const Win7 = {
       const scale = isActive ? 1.1 : 0.8;
       return '<div class="win7-flip3d-card" data-win="' + id + '" style="position:absolute;left:50%;top:50%;width:300px;height:200px;margin-left:-150px;margin-top:-100px;transform:translateZ(' + (-radius) + 'px) rotateY(' + rot + 'deg) translateZ(' + radius + 'px) scale(' + scale + ');cursor:pointer;border-radius:8px;background:rgba(255,255,255,0.85);backdrop-filter:blur(8px);border:2px solid ' + (isActive ? 'rgba(0,120,215,0.3)' : 'transparent') + ';box-shadow:0 8px 32px rgba(0,0,0,0.1);display:flex;flex-direction:column;overflow:hidden">'
         + '<div style="padding:8px 12px;font-size:11px;font-weight:600;color:rgba(0,0,0,0.5);border-bottom:1px solid rgba(0,0,0,0.04);display:flex;align-items:center;gap:6px"><span>' + this._getTaskbarIcon(id) + '</span><span>' + this.esc(w.title) + '</span></div>'
-        + '<div style="flex:1;display:flex;align-items:center;justify-content:center;font-size:32px;opacity:0.3">' + this._getTaskbarIcon(id) + '</div>'
-        + '</div>';
+        + '<div style="flex:1;display:flex;align-items:center;justify-content:center;font-size:32px;opacity:0.3">' + this._getTaskbarIcon(id) + '</div></div>';
     }).join('');
     stage.style.transform = 'rotateY(' + (-this.altTabIndex * angle) + 'deg)';
   },
@@ -508,10 +574,15 @@ const Win7 = {
     this.altTabIndex = 0;
   },
 
+  /* ═══ RUN DIALOG ═══ */
+  openWinVer() {
+    this.createWindow({ id: 'winver-' + Date.now(), title: 'About Windows', icon: '\u{1F4BB}', width: 440, height: 300,
+      content: '<div style="padding:32px;text-align:center"><div style="font-size:40px;margin-bottom:8px;opacity:0.5">\u{229E}</div><div style="font-size:18px;font-weight:600;color:rgba(0,0,0,0.7)">Microsoft Windows 7</div><div style="font-size:11px;color:rgba(0,0,0,0.35);margin-top:4px">WebWSL Edition &middot; Version 1.0</div><div style="font-size:10px;color:rgba(0,0,0,0.25);margin-top:12px">Microsoft Windows 7 WebWSL Edition. All rights reserved.</div><div style="font-size:10px;color:rgba(0,0,0,0.2);margin-top:4px">WebWSL virtual environment &middot; Linux ' + (navigator.platform || 'unknown') + '</div><div style="font-size:9px;color:rgba(0,0,0,0.15);margin-top:8px">WebWSL &copy; 2024-2026</div></div>' });
+  },
+
   openRunDialog() {
     this.createWindow({
-      id: 'run-' + Date.now(), title: 'Run', icon: '\u{1F4DD}',
-      width: 400, height: 170, modal: true,
+      id: 'run-' + Date.now(), title: 'Run', icon: '\u{1F4DD}', width: 400, height: 170, modal: true,
       content: '<div style="padding:20px"><div style="font-size:11px;color:rgba(0,0,0,0.5);margin-bottom:12px">Type the name of a program, folder, document, or Internet resource to open.</div><div style="display:flex;gap:8px;align-items:center"><span style="font-size:11px;color:rgba(0,0,0,0.4);white-space:nowrap">Open:</span><input id="win7-run-input" style="flex:1;padding:4px 8px;background:rgba(255,255,255,0.6);border:1px solid rgba(0,0,0,0.08);border-radius:3px;color:rgba(0,0,0,0.7);font-size:12px;font-family:inherit;outline:none" spellcheck="false" autofocus></div><div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px"><button id="win7-run-ok" style="min-width:70px">OK</button><button id="win7-run-cancel" style="min-width:70px">Cancel</button></div></div>',
       onClose: null,
     });
@@ -531,11 +602,7 @@ const Win7 = {
 
   _execRunCommand(cmd) {
     if (!cmd) return;
-    const map = {
-      'cmd': 'terminal', 'terminal': 'terminal', 'explorer': 'files',
-      'control': 'panel', 'taskmgr': 'taskmgr', 'winver': 'winver',
-      'notepad': null, 'calc': null, 'msconfig': null, 'regedit': null,
-    };
+    const map = { 'cmd': 'terminal', 'terminal': 'terminal', 'explorer': 'files', 'control': 'panel', 'taskmgr': 'taskmgr', 'winver': 'winver' };
     const app = map[cmd.toLowerCase().trim()];
     if (app) {
       Win7.openApp(app);
@@ -550,8 +617,8 @@ const Win7 = {
     }
   },
 
+  /* ═══ FILE ACTIONS ═══ */
   _handleFileAction(action, path, type) {
-    if (!path) return;
     switch (action) {
       case 'file-open':
         if (type === 'dir' && window.send) {
@@ -578,31 +645,36 @@ const Win7 = {
         break;
       }
       case 'file-delete':
-        if (confirm('Delete ' + path + '?')) {
-          if (window.send) window.send({ type: 'file-delete', path });
-        }
+        if (confirm('Delete ' + path + '?')) { if (window.send) window.send({ type: 'file-delete', path }); }
         break;
       case 'file-paste': {
         if (!Win7._clipboard || !window.send) { Win7._notify('Paste', 'Nothing to paste'); break; }
-        const dest = document.querySelector('#win7-win-files .win7-explorer-addr');
-        const destPath = dest ? dest.value : '.';
+        const addr = document.querySelector('#win7-win-files .win7-explorer-addr');
+        const destPath = addr ? addr.value : '.';
         const act = Win7._clipboard.action === 'cut' ? 'file-move' : 'file-copy';
         window.send({ type: act, path: Win7._clipboard.path, dest: destPath + '/' + Win7._clipboard.path.split('/').pop() });
         Win7._clipboard = null;
         break;
       }
       case 'file-new-folder': {
-        const parent = path || '.';
+        const addr = document.querySelector('#win7-win-files .win7-explorer-addr');
+        const parent = (addr ? addr.value : '.') || '.';
         const name = prompt('New folder name:', 'New Folder');
         if (name && window.send) window.send({ type: 'file-mkdir', path: parent + '/' + name });
+        break;
+      }
+      case 'file-new-text': {
+        const addr = document.querySelector('#win7-win-files .win7-explorer-addr');
+        const parent = (addr ? addr.value : '.') || '.';
+        const name = prompt('New text file name:', 'New Text Document.txt');
+        if (name && window.send) window.send({ type: 'file-create', path: parent + '/' + name, content: '' });
         break;
       }
       case 'file-props': {
         const name = path.split('/').pop();
         const ot = type === 'dir' ? 'File folder' : 'File';
         Win7.createWindow({
-          id: 'fileprops-' + Date.now(), title: name + ' Properties', icon: '\u{1F4DD}',
-          width: 380, height: 260,
+          id: 'fileprops-' + Date.now(), title: name + ' Properties', icon: '\u{1F4DD}', width: 380, height: 260,
           content: '<div style="padding:20px;text-align:center;color:rgba(0,0,0,0.5)"><div style="font-size:36px;margin-bottom:8px">\u{1F4DD}</div><div style="font-weight:600;margin-bottom:4px;color:rgba(0,0,0,0.6)">' + Win7.esc(name) + '</div><div style="font-size:11px;color:rgba(0,0,0,0.35)">Type: ' + ot + '</div><div style="font-size:10px;color:rgba(0,0,0,0.25);margin-top:8px">Path: ' + Win7.esc(path) + '</div></div>',
         });
         break;
@@ -617,15 +689,17 @@ const Win7 = {
 
   _handleFileResult(m) {
     if (!m.success) { Win7._notify('Error', (m.action || 'Operation') + ' failed: ' + (m.error || 'Unknown')); return; }
-    const names = { delete: 'Deleted', rename:'Renamed', mkdir:'Created', copy:'Copied', move:'Moved' };
+    const names = { delete: 'Deleted', rename:'Renamed', mkdir:'Created', copy:'Copied', move:'Moved', create:'Created' };
     Win7._notify(names[m.action] || m.action, (m.path || '').split('/').pop() || 'Done');
-    setTimeout(() => Win7._refreshCurrentDir(), 200);
+    setTimeout(() => {
+      Win7._refreshCurrentDir();
+      this._reloadDesktopIcons();
+    }, 200);
   },
 
   _openSearch() {
-    Win7.createWindow({
-      id: 'search-' + Date.now(), title: 'Search Results', icon: '\u{1F50D}',
-      width: 480, height: 320,
+    this.createWindow({
+      id: 'search-' + Date.now(), title: 'Search Results', icon: '\u{1F50D}', width: 480, height: 320,
       content: '<div style="padding:16px"><div style="font-size:13px;font-weight:600;color:rgba(0,0,0,0.6);margin-bottom:8px">Search</div><div style="display:flex;gap:6px"><input id="win7-search-win" style="flex:1;padding:5px 8px;background:rgba(255,255,255,0.6);border:1px solid rgba(0,0,0,0.08);border-radius:3px;color:rgba(0,0,0,0.7);font-size:12px;font-family:inherit;outline:none" placeholder="Search files and folders..." spellcheck="false"><button id="win7-search-win-go" style="padding:4px 12px">Search</button></div><div style="margin-top:12px;color:rgba(0,0,0,0.25);font-size:11px" id="win7-search-win-results">Enter a search term and click Search.</div></div>',
     });
     setTimeout(() => {
@@ -638,12 +712,96 @@ const Win7 = {
     }, 50);
   },
 
-  /* ═══ DESKTOP ICON INTERACTION ═══ */
+  /* ═══ DESKTOP ICONS ═══ */
+  _loadDesktopIconPositions() {
+    try {
+      const saved = localStorage.getItem('win7_desktop_icons');
+      if (saved) this._desktopIconPositions = JSON.parse(saved);
+    } catch {}
+    this._applyDesktopIconPositions();
+  },
+
+  _saveDesktopIconPositions() {
+    try {
+      localStorage.setItem('win7_desktop_icons', JSON.stringify(this._desktopIconPositions));
+    } catch {}
+  },
+
+  _applyDesktopIconPositions() {
+    document.querySelectorAll('.win7-desktop-icon').forEach(el => {
+      const sc = el.dataset.shortcut;
+      if (sc && this._desktopIconPositions[sc]) {
+        el.style.position = 'absolute';
+        el.style.left = this._desktopIconPositions[sc].x + 'px';
+        el.style.top = this._desktopIconPositions[sc].y + 'px';
+      } else {
+        el.style.position = '';
+        el.style.left = '';
+        el.style.top = '';
+      }
+    });
+  },
+
+  _reloadDesktopIcons() {
+    this._loadDesktopIconPositions();
+  },
+
   _selectDesktopIcon(el, ctrl) {
-    if (!ctrl) {
-      document.querySelectorAll('.win7-desktop-icon').forEach(i => i.classList.remove('selected'));
-    }
+    if (!ctrl) document.querySelectorAll('.win7-desktop-icon').forEach(i => i.classList.remove('selected'));
     el.classList.toggle('selected');
+  },
+
+  _startDesktopIconDrag(e) {
+    const icon = e.target.closest('.win7-desktop-icon');
+    if (!icon) return;
+    const sc = icon.dataset.shortcut;
+    if (!sc) return;
+    this._selectDesktopIcon(icon, e.ctrlKey || e.metaKey);
+    const startX = e.clientX, startY = e.clientY;
+    const origLeft = icon.style.left ? parseInt(icon.style.left) : icon.offsetLeft;
+    const origTop = icon.style.top ? parseInt(icon.style.top) : icon.offsetTop;
+    const onMove = (ev) => {
+      if (Math.abs(ev.clientX - startX) < 5 && Math.abs(ev.clientY - startY) < 5) return;
+      const dx = ev.clientX - startX, dy = ev.clientY - startY;
+      const selected = document.querySelectorAll('.win7-desktop-icon.selected');
+      selected.forEach(el => {
+        el.style.position = 'absolute';
+        const origL = el._dragOrigLeft !== undefined ? el._dragOrigLeft : el.offsetLeft;
+        const origT = el._dragOrigTop !== undefined ? el._dragOrigTop : el.offsetTop;
+        el.style.left = (origL + dx) + 'px';
+        el.style.top = (origT + dy) + 'px';
+      });
+    };
+    const onUp = (ev) => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      document.querySelectorAll('.win7-desktop-icon.selected').forEach(el => {
+        const sc = el.dataset.shortcut;
+        if (sc) {
+          this._desktopIconPositions[sc] = {
+            x: parseInt(el.style.left) || el.offsetLeft,
+            y: parseInt(el.style.top) || el.offsetTop,
+          };
+        }
+        delete el._dragOrigLeft;
+        delete el._dragOrigTop;
+      });
+      this._saveDesktopIconPositions();
+    };
+    document.querySelectorAll('.win7-desktop-icon.selected').forEach(el => {
+      el._dragOrigLeft = el.style.left ? parseInt(el.style.left) : el.offsetLeft;
+      el._dragOrigTop = el.style.top ? parseInt(el.style.top) : el.offsetTop;
+    });
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  },
+
+  _renameDesktopIcon(icon) {
+    const label = icon.querySelector('.win7-d-label');
+    if (!label) return;
+    const current = label.textContent;
+    const newName = prompt('Rename:', current);
+    if (newName && newName !== current) label.textContent = newName;
   },
 
   _launchDesktopShortcut(type) {
@@ -651,8 +809,7 @@ const Win7 = {
     else if (type === 'files') this.openApp('files');
     else if (type === 'recycle') {
       this.createWindow({
-        id: 'recycle-' + Date.now(), title: 'Recycle Bin', icon: '\u{1F5D1}',
-        width: 480, height: 340,
+        id: 'recycle-' + Date.now(), title: 'Recycle Bin', icon: '\u{1F5D1}', width: 480, height: 340,
         content: '<div style="padding:24px;text-align:center;color:rgba(0,0,0,0.35)"><div style="font-size:48px;margin-bottom:12px">\u{1F5D1}</div><div>Recycle Bin</div><div style="font-size:10px;margin-top:8px;color:rgba(0,0,0,0.2)">Empty</div></div>',
       });
     }
@@ -680,31 +837,58 @@ const Win7 = {
   },
 
   _endDesktopSelection() {
-    if (this._desktopSel) {
-      this._desktopSel.el.remove();
-      this._desktopSel = null;
-    }
+    if (this._desktopSel) { this._desktopSel.el.remove(); this._desktopSel = null; }
   },
 
   /* ═══ START MENU ═══ */
   toggleStartMenu() {
     this.startMenuOpen = !this.startMenuOpen;
-    document.getElementById('win7-start-menu').classList.toggle('active', this.startMenuOpen);
-    document.getElementById('win7-start-btn').classList.toggle('active', this.startMenuOpen);
+    const menu = document.getElementById('win7-start-menu');
+    const btn = document.getElementById('win7-start-btn');
+    if (menu) menu.classList.toggle('active', this.startMenuOpen);
+    if (btn) btn.classList.toggle('active', this.startMenuOpen);
     if (!this.startMenuOpen) {
-      document.getElementById('win7-search-input').value = '';
+      const inp = document.getElementById('win7-search-input');
+      if (inp) inp.value = '';
       this._filterStartMenu('');
     }
+  },
+
+  setStartSearch(text) {
+    const inp = document.getElementById('win7-search-input');
+    if (inp) inp.value = text;
+    this._filterStartMenu(text);
   },
 
   _filterStartMenu(q) {
     const items = document.querySelectorAll('.win7-start-item');
     const lower = q.toLowerCase().trim();
+    let firstMatch = null;
     items.forEach(el => {
       if (!lower) { el.style.display = ''; return; }
       const text = el.textContent.toLowerCase();
-      el.style.display = text.includes(lower) ? '' : 'none';
+      const match = text.includes(lower);
+      el.style.display = match ? '' : 'none';
+      if (match && !firstMatch && el.dataset.app) firstMatch = el;
     });
+    return firstMatch;
+  },
+
+  _activateSearchFirstMatch() {
+    const inp = document.getElementById('win7-search-input');
+    if (!inp || !inp.value.trim()) return;
+    const items = document.querySelectorAll('.win7-start-item[data-app]');
+    for (const el of items) {
+      if (el.style.display !== 'none') {
+        Win7.openApp(el.dataset.app);
+        break;
+      }
+    }
+  },
+
+  _toggleAllPrograms() {
+    const wrap = document.getElementById('win7-all-programs-wrap');
+    if (wrap) wrap.classList.toggle('open');
   },
 
   openApp(name) {
@@ -713,84 +897,128 @@ const Win7 = {
     switch (name) {
       case 'terminal':
         this.createWindow({
-          id: 'terminal', title: 'Terminal - WebWSL', icon: '\u26A1',
-          width: 720, height: 420,
+          id: 'terminal', title: 'Terminal - WebWSL', icon: '\u26A1', width: 720, height: 420,
           content: '<div id="win7-term-container" style="height:100%;padding:4px;display:flex;flex-direction:column"></div>',
           onClose: () => { this.terminalAttached = false; },
         });
         setTimeout(() => this._attachTerminal(), 50);
         break;
       case 'dashboard':
-        this.createWindow({
-          id: 'dashboard', title: 'System Dashboard', icon: '\u{1F4CA}',
-          width: 660, height: 480,
-          content: '<div style="padding:20px;text-align:center;color:rgba(0,0,0,0.35)">Loading dashboard...</div>',
-        });
+        this.createWindow({ id: 'dashboard', title: 'System Dashboard', icon: '\u{1F4CA}', width: 660, height: 480, content: '<div style="padding:20px;text-align:center;color:rgba(0,0,0,0.35)">Loading dashboard...</div>' });
         if (window.send) window.send({ type: 'dashboard' });
         break;
       case 'files':
         this.fileHistory = [];
-        this.createWindow({
-          id: 'files', title: 'File Explorer', icon: '\u{1F4C1}',
-          width: 740, height: 480,
-          content: this.filesExplorerHTML('.'),
-        });
+        this.createWindow({ id: 'files', title: 'File Explorer', icon: '\u{1F4C1}', width: 740, height: 480, content: this.filesExplorerHTML('.') });
         if (window.send) window.send({ type: 'files', path: '.' });
         break;
       case 'taskmgr':
-        this.createWindow({
-          id: 'taskmgr', title: 'Task Manager', icon: '\u2699',
-          width: 660, height: 440,
-          content: this.taskManagerHTML(),
-        });
+        this.createWindow({ id: 'taskmgr', title: 'Task Manager', icon: '\u2699', width: 660, height: 440, content: this.taskManagerHTML() });
         if (window.send) { window.send({ type: 'processes' }); window.send({ type: 'services' }); window.send({ type: 'dashboard' }); window.send({ type: 'network' }); }
         break;
       case 'services':
-        this.createWindow({
-          id: 'services', title: 'Task Manager - Services', icon: '\u{1F527}',
-          width: 600, height: 400,
-          content: '<div style="padding:20px;text-align:center;color:rgba(0,0,0,0.35)">Loading services...</div>',
-        });
+        this.createWindow({ id: 'services', title: 'Task Manager - Services', icon: '\u{1F527}', width: 600, height: 400, content: '<div style="padding:20px;text-align:center;color:rgba(0,0,0,0.35)">Loading services...</div>' });
         if (window.send) window.send({ type: 'services' });
         break;
       case 'panel':
         this.createWindow({
-          id: 'panel-' + Date.now(), title: 'Control Panel', icon: '\u2699',
-          width: 540, height: 400,
-          content: '<div style="padding:16px"><div style="font-size:14px;font-weight:600;margin-bottom:12px;color:rgba(0,0,0,0.7)">Control Panel</div><div style="display:flex;flex-wrap:wrap;gap:12px"><div class="win7-cp-item" data-action="dashboard"><div style="font-size:28px">\u{1F4CA}</div><div style="font-size:11px;margin-top:4px">System</div></div><div class="win7-cp-item" data-action="taskmgr"><div style="font-size:28px">\u2699</div><div style="font-size:11px;margin-top:4px">Administrative Tools</div></div><div class="win7-cp-item" data-action="files"><div style="font-size:28px">\u{1F4C1}</div><div style="font-size:11px;margin-top:4px">File Explorer Options</div></div><div class="win7-cp-item" data-action="services"><div style="font-size:28px">\u{1F527}</div><div style="font-size:11px;margin-top:4px">Services</div></div><div class="win7-cp-item" data-action="devices"><div style="font-size:28px">\u{1F4F1}</div><div style="font-size:11px;margin-top:4px">Devices and Printers</div></div><div class="win7-cp-item" data-action="personalize"><div style="font-size:28px">\u{1F3A8}</div><div style="font-size:11px;margin-top:4px">Personalization</div></div></div></div>',
+          id: 'panel-' + Date.now(), title: 'Control Panel', icon: '\u2699', width: 540, height: 400,
+          content: '<div style="padding:16px"><div style="font-size:14px;font-weight:600;margin-bottom:12px;color:rgba(0,0,0,0.7)">Control Panel</div><div style="display:flex;flex-wrap:wrap;gap:12px"><div class="win7-cp-item" data-action="dashboard"><div style="font-size:28px">System</div><div style="font-size:11px;margin-top:4px;color:rgba(0,0,0,0.3)">View system info</div></div><div class="win7-cp-item" data-action="taskmgr"><div style="font-size:28px">Admin Tools</div><div style="font-size:11px;margin-top:4px;color:rgba(0,0,0,0.3)">Manage system</div></div><div class="win7-cp-item" data-action="files"><div style="font-size:28px">File Options</div><div style="font-size:11px;margin-top:4px;color:rgba(0,0,0,0.3)">File Explorer</div></div><div class="win7-cp-item" data-action="services"><div style="font-size:28px">Services</div><div style="font-size:11px;margin-top:4px;color:rgba(0,0,0,0.3)">Manage services</div></div><div class="win7-cp-item" data-action="devices"><div style="font-size:28px">Devices</div><div style="font-size:11px;margin-top:4px;color:rgba(0,0,0,0.3)">Devices & Printers</div></div><div class="win7-cp-item" data-action="personalize"><div style="font-size:28px">Personalize</div><div style="font-size:11px;margin-top:4px;color:rgba(0,0,0,0.3)">Desktop appearance</div></div></div></div>',
         });
         break;
       case 'devices':
         this.createWindow({ id: 'devices-' + Date.now(), title: 'Devices and Printers', icon: '\u{1F4F1}', width: 460, height: 280, content: '<div style="padding:32px;text-align:center;color:rgba(0,0,0,0.35)"><div style="font-size:48px;margin-bottom:12px">\u{1F4F1}</div><div>No devices connected</div><div style="font-size:10px;margin-top:8px;color:rgba(0,0,0,0.2)">WebWSL virtual environment</div></div>' });
         break;
       case 'personalize':
-        this.createWindow({ id: 'personalize-' + Date.now(), title: 'Personalization', icon: '\u{1F3A8}', width: 420, height: 260, content: '<div style="padding:24px;text-align:center;color:rgba(0,0,0,0.5);font-size:13px">Personalization</div><div style="padding:0 24px 24px;text-align:center;color:rgba(0,0,0,0.25);font-size:11px">Choose a color scheme for the desktop. Options: Aero, Basic, High Contrast.</div>' });
+        this.createWindow({ id: 'personalize-' + Date.now(), title: 'Personalization', icon: '\u{1F3A8}', width: 420, height: 260, content: '<div style="padding:24px;text-align:center;color:rgba(0,0,0,0.5);font-size:13px">Personalization</div><div style="padding:0 24px 24px;text-align:center;color:rgba(0,0,0,0.25);font-size:11px">Choose a color scheme: Aero, Basic, High Contrast</div>' });
         break;
       case 'winver':
-        this.createWindow({ id: 'winver-' + Date.now(), title: 'About Windows', icon: '\u{1F4BB}', width: 440, height: 300, content: '<div style="padding:32px;text-align:center"><div style="font-size:40px;margin-bottom:8px;opacity:0.5">\u{229E}</div><div style="font-size:18px;font-weight:600;color:rgba(0,0,0,0.7)">Microsoft Windows 7</div><div style="font-size:11px;color:rgba(0,0,0,0.35);margin-top:4px">WebWSL Edition &middot; Version 1.0</div><div style="font-size:10px;color:rgba(0,0,0,0.25);margin-top:12px">Microsoft Windows 7 WebWSL Edition. All rights reserved.</div><div style="font-size:10px;color:rgba(0,0,0,0.2);margin-top:4px">WebWSL virtual environment &middot; Linux ' + (navigator.platform || 'unknown') + '</div><div style="font-size:9px;color:rgba(0,0,0,0.15);margin-top:8px">WebWSL &copy; 2024-2026</div></div>' });
+        this.openWinVer();
         break;
       case 'computer':
-        this.createWindow({ id: 'computer-' + Date.now(), title: 'Computer', icon: '\u{1F4BB}', width: 460, height: 300, content: '<div style="display:flex;flex-wrap:wrap;gap:8px;padding:12px"><div style="text-align:center;width:80px;padding:8px;cursor:pointer" data-action="dashboard"><div style="font-size:32px">\u{1F4CA}</div><div style="font-size:11px;margin-top:4px">System Dashboard</div></div><div style="text-align:center;width:80px;padding:8px;cursor:pointer" data-action="files"><div style="font-size:32px">\u{1F4C1}</div><div style="font-size:11px;margin-top:4px">File Explorer</div></div><div style="text-align:center;width:80px;padding:8px;cursor:pointer" data-action="services"><div style="font-size:32px">\u{1F527}</div><div style="font-size:11px;margin-top:4px">Services</div></div><div style="text-align:center;width:80px;padding:8px;cursor:pointer" data-action="taskmgr"><div style="font-size:32px">\u2699</div><div style="font-size:11px;margin-top:4px">Task Manager</div></div></div><div style="padding:8px 16px;border-top:1px solid rgba(0,0,0,0.04);font-size:11px;color:rgba(0,0,0,0.35)">System: WebWSL on Linux</div>' });
+        this.createWindow({
+          id: 'computer-' + Date.now(), title: 'Computer', icon: '\u{1F4BB}', width: 520, height: 360,
+          content: '<div style="display:flex;flex-direction:column;height:100%"><div style="display:flex;flex-wrap:wrap;gap:4px;padding:12px;flex:1;align-content:flex-start"><div class="win7-tree-item" style="width:100%;margin-bottom:4px;font-weight:600;color:rgba(0,0,0,0.5)">Hard Disk Drives</div><div style="text-align:center;width:80px;padding:8px;cursor:pointer" onclick="Win7.openApp(\'files\')"><div style="font-size:32px">\u{1F4C0}</div><div style="font-size:11px;margin-top:2px">Local Disk (C:)</div></div><div class="win7-sep" style="width:100%;height:1px;background:rgba(0,0,0,0.04);margin:8px 0"></div><div class="win7-tree-item" style="width:100%;margin-bottom:4px;font-weight:600;color:rgba(0,0,0,0.5)">Devices with Removable Storage</div><div style="text-align:center;width:80px;padding:8px;cursor:pointer;opacity:0.4"><div style="font-size:32px">\u{1F4BF}</div><div style="font-size:11px;margin-top:2px">DVD Drive (D:)</div></div></div><div style="padding:6px 12px;border-top:1px solid rgba(0,0,0,0.04);font-size:11px;color:rgba(0,0,0,0.35)">Total size: <span id="win7-computer-size">...</span></div></div>',
+        });
         break;
     }
   },
 
-  /* ═══ DESKTOP CONTEXT MENU ═══ */
+  /* ═══ CONTEXT MENUS ═══ */
   showContextMenu(e, type) {
     e.preventDefault();
     const menuId = type === 'file' ? 'win7-file-ctx' : type === 'taskbar' ? 'win7-taskbar-ctx' : 'win7-context-menu';
     const menu = document.getElementById(menuId);
     if (!menu) return;
-    menu.style.cssText = 'left:' + Math.min(e.clientX, window.innerWidth - menu.offsetWidth || 190) + 'px;top:' + Math.min(e.clientY, window.innerHeight - menu.offsetHeight || 200) + 'px';
+    const w = Math.min(190, window.innerWidth - e.clientX - 10);
+    const h = Math.min(300, window.innerHeight - e.clientY - 10);
+    menu.style.left = Math.min(e.clientX, window.innerWidth - 190) + 'px';
+    menu.style.top = Math.min(e.clientY, window.innerHeight - 160) + 'px';
     menu.classList.add('active');
     menu._ctxType = type || 'desktop';
+    this._activeContextMenu = menu;
+  },
+
+  _showContextSubmenu(menu, parentItem) {
+    const existing = menu.querySelector('.win7-ctx-submenu');
+    if (existing) { existing.remove(); return; }
+    const action = parentItem.dataset.action;
+    if (action === 'view') {
+      const sub = document.createElement('div');
+      sub.className = 'win7-context-menu win7-ctx-submenu active';
+      sub.style.cssText = 'left:' + (parentItem.offsetWidth) + 'px;top:' + (parentItem.offsetTop - 3) + 'px;position:absolute';
+      sub.innerHTML = [
+        '<div class="win7-ctx-item" data-view="large">\u{25A6} Large icons</div>',
+        '<div class="win7-ctx-item" data-view="medium">\u{25A4} Medium icons</div>',
+        '<div class="win7-ctx-item" data-view="small">\u{25A5} Small icons</div>',
+        '<div class="win7-ctx-sep"></div>',
+        '<div class="win7-ctx-item" data-view="auto">\u{2713} Auto arrange</div>',
+        '<div class="win7-ctx-item" data-view="grid">\u{2713} Align to grid</div>',
+      ].join('');
+      sub.addEventListener('click', (e) => {
+        const item = e.target.closest('.win7-ctx-item');
+        if (!item || !item.dataset.view) return;
+        if (item.dataset.view === 'auto' || item.dataset.view === 'grid') {
+          item.textContent = item.textContent.startsWith('\u2713') ? item.textContent.replace('\u2713', '  ') : item.textContent.replace(/^./, '\u2713');
+          localStorage.setItem('win7_desktop_' + item.dataset.view, item.textContent.startsWith('\u2713'));
+        } else {
+          Win7._notify('View', item.dataset.view.charAt(0).toUpperCase() + item.dataset.view.slice(1) + ' icons');
+          Win7.hideContextMenu();
+        }
+        e.stopPropagation();
+      });
+      menu.appendChild(sub);
+    } else if (action === 'sort-by') {
+      const sub = document.createElement('div');
+      sub.className = 'win7-context-menu win7-ctx-submenu active';
+      sub.style.cssText = 'left:' + (parentItem.offsetWidth) + 'px;top:' + (parentItem.offsetTop - 3) + 'px;position:absolute';
+      sub.innerHTML = [
+        '<div class="win7-ctx-item" data-sort="name">Name</div>',
+        '<div class="win7-ctx-item" data-sort="size">Size</div>',
+        '<div class="win7-ctx-item" data-sort="type">Type</div>',
+        '<div class="win7-ctx-item" data-sort="date">Date modified</div>',
+      ].join('');
+      sub.addEventListener('click', (e) => {
+        const item = e.target.closest('.win7-ctx-item');
+        if (!item || !item.dataset.sort) return;
+        Win7._notify('Sort by', item.dataset.sort.charAt(0).toUpperCase() + item.dataset.sort.slice(1));
+        Win7.hideContextMenu();
+        e.stopPropagation();
+      });
+      menu.appendChild(sub);
+    }
   },
 
   hideContextMenu() {
-    document.querySelectorAll('.win7-context-menu').forEach(el => el.classList.remove('active'));
+    document.querySelectorAll('.win7-context-menu').forEach(el => {
+      el.classList.remove('active');
+      const sub = el.querySelector('.win7-ctx-submenu');
+      if (sub) sub.remove();
+    });
+    this._activeContextMenu = null;
   },
 
-  /* ═══ FILE EXPLORER HTML ═══ */
+  /* ═══ FILE EXPLORER ═══ */
   filesExplorerHTML(path) {
     return [
       '<div class="win7-explorer" style="display:flex;flex-direction:column;height:100%">',
@@ -827,11 +1055,8 @@ const Win7 = {
     if (addr) addr.value = msg.path;
     const isRoot = msg.path === '/';
     const parent = isRoot ? '/' : msg.path.replace(/\/+$/, '').replace(/\/[^/]*$/, '') || '/';
-
     let h = '';
-    if (!isRoot) {
-      h += '<div class="file-item file-up-item" data-path="' + parent.replace(/"/g, '&quot;') + '" data-type="dir"><div class="file-icon">\u2190</div><div class="file-name">..</div></div>';
-    }
+    if (!isRoot) h += '<div class="file-item file-up-item" data-path="' + parent.replace(/"/g, '&quot;') + '" data-type="dir"><div class="file-icon">\u2190</div><div class="file-name">..</div></div>';
     for (const e of msg.entries) {
       const p = (msg.path.replace(/\/$/, '') + '/' + e.name).replace(/"/g, '&quot;');
       const icon = this._getFileIcon(e.name, e.type);
@@ -839,7 +1064,6 @@ const Win7 = {
       h += '<div class="file-item' + cls + '" data-path="' + p + '" data-type="' + e.type + '"><div class="file-icon">' + icon + '</div><div class="file-name">' + this.esc(e.name) + (e.type === 'dir' ? '/' : '') + '</div>' + (e.type !== 'dir' ? '<div class="file-size-sm">' + this._fmtSize(e.size) + '</div>' : '') + '</div>';
     }
     grid.innerHTML = h || '<div class="empty-msg" style="padding:20px;text-align:center;color:rgba(0,0,0,0.2)">Empty directory</div>';
-
     const status = document.getElementById('win7-explorer-status');
     if (status) status.textContent = msg.entries.length + ' items';
   },
@@ -913,6 +1137,28 @@ const Win7 = {
     c.innerHTML = '<div style="padding:16px"><div style="font-size:13px;font-weight:600;color:rgba(0,0,0,0.6);margin-bottom:12px">Performance</div><div style="margin-bottom:12px"><div style="display:flex;justify-content:space-between;font-size:11px;color:rgba(0,0,0,0.4);margin-bottom:2px"><span>CPU Usage</span><span>' + cpu.toFixed(1) + '%</span></div><div class="win7-progress"><div class="win7-progress-bar" style="width:' + Math.min(cpu, 100) + '%"></div></div></div><div style="margin-bottom:12px"><div style="display:flex;justify-content:space-between;font-size:11px;color:rgba(0,0,0,0.4);margin-bottom:2px"><span>Memory</span><span>' + mem.toFixed(1) + '%</span></div><div class="win7-progress"><div class="win7-progress-bar" style="width:' + Math.min(mem, 100) + '%"></div></div></div></div>';
   },
 
+  _renderWin7DashboardStandalone(msg) {
+    const c = document.getElementById('win7-win-dashboard');
+    if (!c) return;
+    const body = c.querySelector('.win7-win-body');
+    if (!body) return;
+    const d = msg.data || {};
+    const cpu = d.cpuLoad || d.cpu || 0;
+    const mem = d.memUsage || d.mem || 0;
+    body.innerHTML = '<div style="padding:16px;overflow:auto;height:100%">'
+      + '<div style="font-size:16px;font-weight:600;color:rgba(0,0,0,0.7);margin-bottom:16px">\u{1F4CA} System Dashboard</div>'
+      + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">'
+      + '<div style="background:rgba(255,255,255,0.4);border:1px solid rgba(0,0,0,0.04);border-radius:4px;padding:10px"><div style="font-size:10px;color:rgba(0,0,0,0.3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px">Hostname</div><div style="font-size:13px;font-weight:500;color:rgba(0,0,0,0.7)">' + Win7.esc(d.hostname || 'localhost') + '</div></div>'
+      + '<div style="background:rgba(255,255,255,0.4);border:1px solid rgba(0,0,0,0.04);border-radius:4px;padding:10px"><div style="font-size:10px;color:rgba(0,0,0,0.3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px">Platform</div><div style="font-size:13px;font-weight:500;color:rgba(0,0,0,0.7)">' + Win7.esc(d.platform || '') + ' ' + Win7.esc(d.arch || '') + '</div></div>'
+      + '<div style="background:rgba(255,255,255,0.4);border:1px solid rgba(0,0,0,0.04);border-radius:4px;padding:10px"><div style="font-size:10px;color:rgba(0,0,0,0.3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px">CPU</div><div style="font-size:13px;font-weight:500;color:rgba(0,0,0,0.7)">' + (d.cpuCount || '?') + ' cores</div><div style="font-size:10px;color:rgba(0,0,0,0.25);margin-top:2px">' + Win7.esc((d.cpuModel || '').substring(0, 40)) + '</div></div>'
+      + '<div style="background:rgba(255,255,255,0.4);border:1px solid rgba(0,0,0,0.04);border-radius:4px;padding:10px"><div style="font-size:10px;color:rgba(0,0,0,0.3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px">Memory</div><div style="font-size:13px;font-weight:500;color:rgba(0,0,0,0.7)">' + Win7.esc(d.memory || '') + '</div></div>'
+      + '</div>'
+      + '<div style="margin-top:16px"><div style="font-size:11px;color:rgba(0,0,0,0.4);margin-bottom:6px">CPU Usage: ' + cpu.toFixed(1) + '%</div><div class="win7-progress"><div class="win7-progress-bar" style="width:' + Math.min(cpu, 100) + '%"></div></div></div>'
+      + '<div style="margin-top:10px"><div style="font-size:11px;color:rgba(0,0,0,0.4);margin-bottom:6px">Memory Usage: ' + mem.toFixed(1) + '%</div><div class="win7-progress"><div class="win7-progress-bar" style="width:' + Math.min(mem, 100) + '%"></div></div></div>'
+      + '<div style="margin-top:16px;font-size:10px;color:rgba(0,0,0,0.2)">Kernel: ' + Win7.esc(d.release || '') + ' | Uptime: ' + Win7.esc(d.uptime || '') + ' | Load: ' + Win7.esc(d.loadavg || '') + ' | Disk: ' + Win7.esc(d.disk || '') + '</div>'
+      + '</div>';
+  },
+
   /* ═══ WINDOW DRAG ═══ */
   _startDrag(e) {
     const titlebar = e.target.closest('.win7-win-titlebar');
@@ -920,51 +1166,35 @@ const Win7 = {
     const id = titlebar.dataset.win;
     const w = this.windows[id];
     if (!w || w.maximized) return;
-
-    const btn = e.target.closest('.win7-win-btn');
-    if (btn) return;
-
+    if (e.target.closest('.win7-win-btn')) return;
     this.focusWindow(id);
     titlebar.classList.add('dragging');
-
     const rect = w.el.getBoundingClientRect();
     const dx = e.clientX - rect.left;
     const dy = e.clientY - rect.top;
     this.dragData = { id, dx, dy, startX: e.clientX, startY: e.clientY, titlebar, moved: false };
-
     const onMove = (ev) => {
       if (!this.dragData) return;
       this.dragData.moved = true;
-      const snapSide = this._checkSnapRegion(id, ev.clientX, ev.clientY);
       w.el.style.left = (ev.clientX - this.dragData.dx) + 'px';
       w.el.style.top = (ev.clientY - this.dragData.dy) + 'px';
-      w.el.style.right = '';
-      w.el.style.bottom = '';
-      w.el.style.width = '';
-      w.el.style.height = '';
-
+      w.el.style.right = ''; w.el.style.bottom = ''; w.el.style.width = ''; w.el.style.height = '';
+      const snapSide = this._checkSnapRegion(id, ev.clientX, ev.clientY);
       if (snapSide !== this._snapRegion) {
         this._snapRegion = snapSide;
         w.el.style.outline = snapSide ? '3px solid rgba(0,120,215,0.4)' : '';
       }
     };
-
     const onUp = (ev) => {
       document.removeEventListener('mousemove', onMove);
       document.removeEventListener('mouseup', onUp);
       if (this.dragData) {
-        if (!this.dragData.moved && ev.clientX === this.dragData.startX && ev.clientY === this.dragData.startY) {
-          this.shakeWindow(id);
-        } else if (this._snapRegion) {
-          w.el.style.outline = '';
-          this.snapWindow(id, this._snapRegion);
-          this._snapRegion = null;
-        }
+        if (!this.dragData.moved) this.shakeWindow(id);
+        else if (this._snapRegion) { w.el.style.outline = ''; this.snapWindow(id, this._snapRegion); this._snapRegion = null; }
         titlebar.classList.remove('dragging');
         this.dragData = null;
       }
     };
-
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup', onUp);
   },
@@ -980,7 +1210,6 @@ const Win7 = {
     const edge = handle.dataset.edge;
     const rect = w.el.getBoundingClientRect();
     this.resizeData = { id, edge, startX: e.clientX, startY: e.clientY, rect };
-
     const onMove = (ev) => {
       if (!this.resizeData) return;
       const d = this.resizeData;
@@ -993,13 +1222,7 @@ const Win7 = {
       w.el.style.cssText = 'left:' + left + 'px;top:' + top + 'px;width:' + width + 'px;height:' + height + 'px;right:;bottom:;z-index:' + this.windowZIndex;
       if (!w.normalRect) w.normalRect = { width: d.rect.width + 'px', height: d.rect.height + 'px', left: d.rect.left + 'px', top: d.rect.top + 'px' };
     };
-
-    const onUp = () => {
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onUp);
-      this.resizeData = null;
-    };
-
+    const onUp = () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); this.resizeData = null; };
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup', onUp);
   },
@@ -1113,21 +1336,14 @@ const Win7 = {
 window.win7Handle = (m) => {
   if (!Win7.active) return;
   switch (m.type) {
-    case 'files':
-      if (document.getElementById('win7-files-grid')) Win7._renderWin7Files(m);
-      break;
-    case 'processes':
-      if (document.getElementById('win7-proc-list')) Win7._renderWin7Processes(m);
-      break;
-    case 'services':
-      if (document.getElementById('win7-svc-list')) Win7._renderWin7Services(m);
-      break;
+    case 'files': if (document.getElementById('win7-files-grid')) Win7._renderWin7Files(m); break;
+    case 'processes': if (document.getElementById('win7-proc-list')) Win7._renderWin7Processes(m); break;
+    case 'services': if (document.getElementById('win7-svc-list')) Win7._renderWin7Services(m); break;
     case 'dashboard':
       if (document.getElementById('win7-perf-content')) Win7._renderWin7Performance(m);
+      if (document.getElementById('win7-win-dashboard')) Win7._renderWin7DashboardStandalone(m);
       break;
-    case 'file-result':
-      Win7._handleFileResult(m);
-      break;
+    case 'file-result': Win7._handleFileResult(m); break;
   }
 };
 
@@ -1138,9 +1354,8 @@ document.getElementById('win7-overlay').addEventListener('click', (e) => {
   /* Title bar buttons */
   const btn = t.closest('.win7-win-btn');
   if (btn) {
-    const id = btn.dataset.win;
-    const action = btn.dataset.action;
     e.stopPropagation();
+    const id = btn.dataset.win, action = btn.dataset.action;
     if (action === 'close') Win7.closeWindow(id);
     else if (action === 'minimize') Win7.minimizeWindow(id);
     else if (action === 'maximize') Win7.maximizeWindow(id);
@@ -1149,16 +1364,12 @@ document.getElementById('win7-overlay').addEventListener('click', (e) => {
 
   /* Clicking window body focuses it */
   const winBody = t.closest('.win7-win-body');
-  if (winBody) {
-    const id = winBody.dataset.win;
-    if (id && Win7.windows[id]) Win7.focusWindow(id);
-  }
+  if (winBody) { const id = winBody.dataset.win; if (id && Win7.windows[id]) Win7.focusWindow(id); }
 
   /* Taskbar buttons */
   const tb = t.closest('.win7-taskbar-btn');
   if (tb) {
-    const id = tb.dataset.win;
-    const w = Win7.windows[id];
+    const id = tb.dataset.win, w = Win7.windows[id];
     if (!w) return;
     if (w.minimized) Win7.restoreWindow(id);
     else if (w === Win7.windows[Win7.windowOrder[Win7.windowOrder.length - 1]]) Win7.minimizeWindow(id);
@@ -1175,10 +1386,7 @@ document.getElementById('win7-overlay').addEventListener('click', (e) => {
       const w = Win7.windows[id];
       if (w && !w.minimized) {
         w.minimized = true;
-        if (!w.normalRect) {
-          const s = w.el.style;
-          w.normalRect = { width: s.width, height: s.height, left: s.left, top: s.top };
-        }
+        if (!w.normalRect) { const s = w.el.style; w.normalRect = { width: s.width, height: s.height, left: s.left, top: s.top }; }
         w.el.style.display = 'none';
       }
     }
@@ -1186,48 +1394,37 @@ document.getElementById('win7-overlay').addEventListener('click', (e) => {
     return;
   }
 
-  /* System tray clock */
+  /* System tray */
   if (t.closest('#win7-clock')) { Win7.showCalendar(); return; }
+  if (t.closest('#win7-tray-network')) { Win7._showTrayPopup('network'); return; }
+  if (t.closest('#win7-tray-volume')) { Win7._showTrayPopup('volume'); return; }
+  if (t.closest('#win7-tray-power')) { Win7._showTrayPopup('power'); return; }
+  if (t.closest('#win7-tray-action')) { Win7._showTrayPopup('action'); return; }
 
   /* Start menu items */
   const si = t.closest('.win7-start-item');
-  if (si && si.dataset.app) { Win7.openApp(si.dataset.app); return; }
-  if (si && si.dataset.shortcut) { Win7._launchDesktopShortcut(si.dataset.shortcut); return; }
-  if (si && si.dataset.action) {
-    if (si.dataset.action === 'run') Win7.openRunDialog();
-    if (si.dataset.action === 'all-programs') {
-      const wrap = document.getElementById('win7-all-programs-wrap');
-      if (wrap) wrap.classList.toggle('open');
+  if (si) {
+    if (si.dataset.app) { Win7.openApp(si.dataset.app); return; }
+    if (si.dataset.shortcut) { Win7._launchDesktopShortcut(si.dataset.shortcut); return; }
+    if (si.dataset.action) {
+      if (si.dataset.action === 'run') Win7.openRunDialog();
+      else if (si.dataset.action === 'all-programs') Win7._toggleAllPrograms();
+      else if (si.dataset.action === 'exit' || si.dataset.action === 'shutdown') { if (confirm('Exit Windows 7 mode?')) { if (Win7.active) Win7.toggle(); } }
+      return;
     }
-    if (si.dataset.action === 'exit' || si.dataset.action === 'shutdown') {
-      if (confirm('Are you sure you want to exit Windows 7 mode?')) {
-        if (Win7.active) Win7.toggle();
-      }
-    }
-    return;
   }
 
   /* Shutdown button */
-  if (t.closest('#win7-start-shutdown')) {
-    if (Win7.active) Win7.toggle();
-    return;
-  }
+  if (t.closest('#win7-start-shutdown')) { if (Win7.active) Win7.toggle(); return; }
 
   /* All Programs toggle */
-  if (t.closest('.win7-start-item.all-programs')) {
-    const wrap = document.getElementById('win7-all-programs-wrap');
-    if (wrap) wrap.classList.toggle('open');
-    return;
-  }
+  if (t.closest('.win7-start-item.all-programs')) { Win7._toggleAllPrograms(); return; }
 
   /* Desktop icons */
   const di = t.closest('.win7-desktop-icon');
-  if (di) {
-    Win7._selectDesktopIcon(di, e.ctrlKey || e.metaKey);
-    return;
-  }
+  if (di) { Win7._selectDesktopIcon(di, e.ctrlKey || e.metaKey); return; }
 
-  /* File explorer items */
+  /* File explorer - tree */
   const treeItem = t.closest('.win7-tree-item');
   if (treeItem && treeItem.dataset.path) {
     const addr = document.querySelector('#win7-win-files .win7-explorer-addr');
@@ -1236,16 +1433,15 @@ document.getElementById('win7-overlay').addEventListener('click', (e) => {
     return;
   }
 
+  /* File explorer - file items */
   const fileItem = t.closest('.win7-explorer .file-item');
   if (fileItem) {
     document.querySelectorAll('#win7-files-grid .file-item').forEach(el => el.classList.remove('selected'));
     fileItem.classList.add('selected');
-    if (fileItem.dataset.path) {
-      if (fileItem.dataset.type === 'dir' || fileItem.classList.contains('file-up-item')) {
-        const addr = document.querySelector('#win7-win-files .win7-explorer-addr');
-        if (addr) { Win7.fileHistory.push(addr.value); addr.value = fileItem.dataset.path; }
-        if (window.send) window.send({ type: 'files', path: fileItem.dataset.path });
-      }
+    if (fileItem.dataset.path && (fileItem.dataset.type === 'dir' || fileItem.classList.contains('file-up-item'))) {
+      const addr = document.querySelector('#win7-win-files .win7-explorer-addr');
+      if (addr) { Win7.fileHistory.push(addr.value); addr.value = fileItem.dataset.path; }
+      if (window.send) window.send({ type: 'files', path: fileItem.dataset.path });
     }
     return;
   }
@@ -1257,28 +1453,17 @@ document.getElementById('win7-overlay').addEventListener('click', (e) => {
     const curPath = addr ? addr.value : '.';
     switch (tbBtn.dataset.action) {
       case 'back':
-        if (Win7.fileHistory.length > 0) {
-          const prev = Win7.fileHistory.pop();
-          Win7.fileForward.push(curPath);
-          if (window.send) window.send({ type: 'files', path: prev });
-        }
+        if (Win7.fileHistory.length > 0) { const prev = Win7.fileHistory.pop(); Win7.fileForward.push(curPath); if (window.send) window.send({ type: 'files', path: prev }); }
         break;
       case 'forward':
-        if (Win7.fileForward.length > 0) {
-          const next = Win7.fileForward.pop();
-          Win7.fileHistory.push(curPath);
-          if (window.send) window.send({ type: 'files', path: next });
-        }
+        if (Win7.fileForward.length > 0) { const next = Win7.fileForward.pop(); Win7.fileHistory.push(curPath); if (window.send) window.send({ type: 'files', path: next }); }
         break;
       case 'up': {
         const up = curPath === '/' ? '/' : curPath.replace(/\/+$/, '').replace(/\/[^/]*$/, '') || '/';
-        Win7.fileHistory.push(curPath);
-        if (window.send) window.send({ type: 'files', path: up });
+        Win7.fileHistory.push(curPath); if (window.send) window.send({ type: 'files', path: up });
         break;
       }
-      case 'refresh':
-        if (window.send) window.send({ type: 'files', path: curPath });
-        break;
+      case 'refresh': if (window.send) window.send({ type: 'files', path: curPath }); break;
     }
     return;
   }
@@ -1297,52 +1482,36 @@ document.getElementById('win7-overlay').addEventListener('click', (e) => {
     Win7.hideContextMenu();
     const action = ctxItem.dataset.action;
     switch (action) {
-      case 'show-desktop':
-        document.getElementById('win7-show-desktop')?.click();
-        break;
-      case 'taskmgr':
-        Win7.openApp('taskmgr');
-        break;
-      case 'personalize':
-        Win7.openApp('personalize');
-        break;
-      case 'properties':
-        Win7._notify('Properties', 'System properties');
-        break;
-      case 'run':
-        Win7.openRunDialog();
-        break;
+      case 'show-desktop': document.getElementById('win7-show-desktop')?.click(); break;
+      case 'taskmgr': Win7.openApp('taskmgr'); break;
+      case 'personalize': Win7.openApp('personalize'); break;
+      case 'properties': Win7._notify('Properties', 'System properties'); break;
+      case 'run': Win7.openRunDialog(); break;
+      case 'cascade': Win7.cascadeWindows(); break;
+      case 'stack': Win7.stackWindows(); break;
+      case 'side': Win7.sideBySideWindows(); break;
       case 'view':
-      case 'sort-by':
-      case 'refresh':
-        Win7._notify('Desktop', action.charAt(0).toUpperCase() + action.slice(1));
-        break;
+      case 'sort-by': break;
+      case 'refresh': Win7._notify('Desktop', 'Refreshing...'); break;
       case 'file-new-folder': {
         const addr = document.querySelector('#win7-win-files .win7-explorer-addr');
-        const cur = addr ? addr.value : '.';
+        const cur = (addr ? addr.value : '.') || '.';
         const name = prompt('New folder name:', 'New Folder');
         if (name && window.send) window.send({ type: 'file-mkdir', path: cur + '/' + name });
         break;
       }
       case 'file-new-text': {
         const addr2 = document.querySelector('#win7-win-files .win7-explorer-addr');
-        const cur2 = addr2 ? addr2.value : '.';
-        const name2 = prompt('New file name:', 'New Text Document.txt');
+        const cur2 = (addr2 ? addr2.value : '.') || '.';
+        const name2 = prompt('New text file name:', 'New Text Document.txt');
         if (name2 && window.send) window.send({ type: 'file-create', path: cur2 + '/' + name2, content: '' });
         break;
       }
-      case 'file-paste':
-        Win7._handleFileAction('file-paste');
-        break;
-      case 'cascade':
-      case 'stack':
-      case 'side':
-        Win7._notify('Arrange', 'Window arrangement (' + action + ')');
-        break;
+      case 'file-paste': Win7._handleFileAction('file-paste'); break;
       default:
         if (action.startsWith('file-')) {
-          const selected = document.querySelector('#win7-files-grid .file-item.selected');
-          Win7._handleFileAction(action, selected?.dataset?.path, selected?.dataset?.type);
+          const sel = document.querySelector('#win7-files-grid .file-item.selected');
+          Win7._handleFileAction(action, sel?.dataset?.path, sel?.dataset?.type);
         }
     }
     return;
@@ -1363,40 +1532,32 @@ document.getElementById('win7-overlay').addEventListener('click', (e) => {
   const cp = t.closest('.win7-cp-item');
   if (cp && cp.dataset.action) { Win7.openApp(cp.dataset.action); return; }
 
-  /* Kill button */
+  /* Kill / Service buttons */
   const kill = t.closest('.win7-btn-kill');
-  if (kill && kill.dataset.pid) {
-    if (window.send) window.send({ type: 'kill', pid: parseInt(kill.dataset.pid) });
-    kill.textContent = '...'; kill.disabled = true;
-    return;
-  }
-
-  /* Service button */
+  if (kill && kill.dataset.pid) { if (window.send) window.send({ type: 'kill', pid: parseInt(kill.dataset.pid) }); kill.textContent = '...'; kill.disabled = true; return; }
   const svc = t.closest('.win7-btn-svc');
-  if (svc && svc.dataset.svc && svc.dataset.action) {
-    if (window.send) window.send({ type: 'service', name: svc.dataset.svc, action: svc.dataset.action });
-    svc.textContent = '...'; svc.disabled = true;
-    return;
-  }
+  if (svc && svc.dataset.svc && svc.dataset.action) { if (window.send) window.send({ type: 'service', name: svc.dataset.svc, action: svc.dataset.action }); svc.textContent = '...'; svc.disabled = true; return; }
 });
 
-/* Desktop right-click context menu */
+/* Right-click context menus */
 document.getElementById('win7-desktop').addEventListener('contextmenu', (e) => Win7.showContextMenu(e, 'desktop'));
-
-/* File item right-click context menu on explorer */
 document.getElementById('win7-overlay').addEventListener('contextmenu', (e) => {
-  const fileItem = e.target.closest('.win7-explorer .file-item');
-  if (fileItem) {
-    e.preventDefault();
-    fileItem.classList.add('selected');
-    Win7.showContextMenu(e, 'file');
-  }
+  if (e.target.closest('.win7-explorer .file-item')) { e.preventDefault(); e.target.closest('.win7-explorer .file-item').classList.add('selected'); Win7.showContextMenu(e, 'file'); }
 });
-
-/* Taskbar right-click */
 document.getElementById('win7-taskbar').addEventListener('contextmenu', (e) => Win7.showContextMenu(e, 'taskbar'));
 
-/* Close context menu on click anywhere */
+/* Hover submenu for View / Sort by */
+document.getElementById('win7-overlay').addEventListener('mouseover', (e) => {
+  const item = e.target.closest('.win7-ctx-item');
+  if (!item || !item.dataset.action) return;
+  const menu = item.closest('.win7-context-menu');
+  if (!menu || menu._ctxType !== 'desktop') return;
+  if (item.dataset.action === 'view' || item.dataset.action === 'sort-by') {
+    Win7._showContextSubmenu(menu, item);
+  }
+});
+
+/* Close context menus */
 document.addEventListener('click', () => Win7.hideContextMenu());
 
 /* Window drag/resize */
@@ -1409,42 +1570,84 @@ document.getElementById('win7-windows-container').addEventListener('mousedown', 
 /* Desktop drag selection */
 document.getElementById('win7-desktop').addEventListener('mousedown', (e) => {
   if (!Win7.active) return;
-  if (e.target.closest('.win7-desktop-icon')) return;
-  if (e.target.closest('.win7-context-menu')) return;
-  if (e.target.closest('.win7-windows-container')) return;
-  if (e.target.closest('.win7-gadgets-layer')) return;
+  const icon = e.target.closest('.win7-desktop-icon');
+  if (icon) { Win7._startDesktopIconDrag(e); return; }
+  if (e.target.closest('.win7-context-menu') || e.target.closest('.win7-windows-container') || e.target.closest('.win7-gadgets-layer')) return;
   const x = e.clientX, y = e.clientY;
   Win7._startDesktopSelection(x, y);
   const onMove = (ev) => { Win7._moveDesktopSelection(ev.clientX, ev.clientY); };
-  const onUp = () => {
-    document.removeEventListener('mousemove', onMove);
-    document.removeEventListener('mouseup', onUp);
-    Win7._endDesktopSelection();
-  };
+  const onUp = () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); Win7._endDesktopSelection(); };
   document.addEventListener('mousemove', onMove);
   document.addEventListener('mouseup', onUp);
 });
 
-/* Desktop double-click shortcuts */
+/* Desktop double-click */
 document.getElementById('win7-desktop').addEventListener('dblclick', (e) => {
   if (!Win7.active) return;
   const di = e.target.closest('.win7-desktop-icon');
   if (di && di.dataset.shortcut) Win7._launchDesktopShortcut(di.dataset.shortcut);
 });
 
-/* Keyboard shortcuts */
+/* ═══ KEYBOARD SHORTCUTS ═══ */
 document.addEventListener('keydown', (e) => {
   if (!Win7.active) return;
-  if (e.altKey && e.key === 'Tab') { e.preventDefault(); Win7.showAltTab(e.shiftKey ? -1 : 1); return; }
-  if (e.key === 'Escape' && Win7.altTabActive) { Win7.hideAltTab(); return; }
-  if (e.key === 'Escape' && Win7.flip3DActive) { Win7.hideFlip3D(); return; }
-  if (e.key === 'Escape' && Win7.startMenuOpen) { Win7.toggleStartMenu(); return; }
-  if (e.key === 'Escape') Win7.hideContextMenu();
 
+  /* Alt+Tab */
+  if (e.altKey && e.key === 'Tab') { e.preventDefault(); Win7.showAltTab(e.shiftKey ? -1 : 1); return; }
+
+  /* Alt+F4 - close active window */
+  if (e.altKey && e.key === 'F4') {
+    e.preventDefault();
+    const active = Win7.getActiveWindow();
+    if (active) Win7.closeWindow(active.id);
+    return;
+  }
+
+  /* Win key shortcuts */
   if (e.key === 'Meta' || e.key === 'OS' || e.key === 'Win') {
     Win7._winKeyHeld = true;
     if (e.repeat) return;
     Win7.toggleStartMenu();
+    return;
+  }
+
+  /* Win+D - Show Desktop */
+  if ((e.metaKey || e.ctrlKey) && e.key === 'd' && Win7._winKeyHeld) {
+    e.preventDefault();
+    document.getElementById('win7-show-desktop')?.click();
+    return;
+  }
+
+  /* Win+E - File Explorer */
+  if ((e.metaKey || e.ctrlKey) && e.key === 'e' && Win7._winKeyHeld) {
+    e.preventDefault();
+    Win7.openApp('files');
+    return;
+  }
+
+  /* Win+R - Run dialog */
+  if ((e.metaKey || e.ctrlKey) && e.key === 'r' && Win7._winKeyHeld) {
+    e.preventDefault();
+    Win7.openRunDialog();
+    return;
+  }
+
+  /* Ctrl+Esc - Start menu */
+  if (e.ctrlKey && e.key === 'Escape') {
+    e.preventDefault();
+    Win7.toggleStartMenu();
+    return;
+  }
+
+  /* Escape - close overlays */
+  if (e.key === 'Escape') {
+    if (Win7.altTabActive) { Win7.hideAltTab(); return; }
+    if (Win7.flip3DActive) { Win7.hideFlip3D(); return; }
+    if (Win7.startMenuOpen) { Win7.toggleStartMenu(); return; }
+    Win7.hideContextMenu();
+    Win7.hideCalendar();
+    Win7._closeTrayPopup();
+    return;
   }
 });
 
@@ -1452,25 +1655,27 @@ document.addEventListener('keyup', (e) => {
   if (e.key === 'Meta' || e.key === 'OS' || e.key === 'Win') Win7._winKeyHeld = false;
 });
 
+/* Start menu search */
 document.getElementById('win7-search-input')?.addEventListener('input', function() {
   Win7._filterStartMenu(this.value);
 });
+document.getElementById('win7-search-input')?.addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') Win7._activateSearchFirstMatch();
+});
 
+/* Taskbar preview */
 document.getElementById('win7-taskbar-windows')?.addEventListener('mouseover', (e) => {
   const btn = e.target.closest('.win7-taskbar-btn');
   if (btn && btn.dataset.win) Win7._showTaskbarPreview(btn.dataset.win, btn);
 });
-
 document.getElementById('win7-taskbar-windows')?.addEventListener('mouseout', (e) => {
-  const btn = e.target.closest('.win7-taskbar-btn');
-  if (btn) Win7._hideTaskbarPreview();
+  if (e.target.closest('.win7-taskbar-btn')) Win7._hideTaskbarPreview();
 });
 
+/* Address bar Enter key */
 document.getElementById('win7-overlay')?.addEventListener('keydown', (e) => {
   const addr = e.target.closest('.win7-explorer-addr');
-  if (addr && e.key === 'Enter') {
-    if (window.send) window.send({ type: 'files', path: addr.value });
-  }
+  if (addr && e.key === 'Enter') { if (window.send) window.send({ type: 'files', path: addr.value }); }
 });
 
 })();
