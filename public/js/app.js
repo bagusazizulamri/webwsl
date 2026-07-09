@@ -15,12 +15,14 @@ const TERM_OPTS = {
   },
 };
 
+/* Create an initial terminal session silently on load */
+let initialCreated = false;
+
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => document.querySelectorAll(s);
 let ws, sessions = {}, activeId = null;
-let currentPath = '.', sortKey = '', sortDir = 1;
+let sortKey = '', sortDir = 1;
 let refreshTimer = null;
-let historyStack = [];
 let reconnectAttempts = 0;
 
 function connect() {
@@ -29,6 +31,7 @@ function connect() {
     setStatus('connected');
     reconnectAttempts = 0;
     send({ type: 'dashboard' });
+    if (!initialCreated) { initialCreated = true; send({ type: 'create' }); }
   };
   ws.onmessage = (e) => {
     try {
@@ -94,14 +97,34 @@ function handle(m) {
       break;
     }
     case 'service-result': {
-      const btn = document.querySelector('.btn-svc[data-svc="' + m.name + '"]');
+      const sel = '.btn-svc[data-svc="' + m.name + '"], .btn-restart-svc[data-svc="' + m.name + '"]';
+      const btn = document.querySelector(sel);
       if (btn) {
-        btn.textContent = m.success ? (m.action === 'stop' ? 'Start' : 'Stop') : 'Fail';
+        btn.textContent = m.success ? (m.action === 'stop' ? 'Start' : m.action === 'restart' ? '\u{1F504} Restart' : 'Stop') : 'Fail';
+        btn.disabled = false;
         setTimeout(() => {
           const active = document.querySelector('.panel.active');
-          if (active && active.id === 'panel-services') send({ type: 'services' });
+          if (active && (active.id === 'panel-services' || active.id === 'panel-dashboard')) send({ type: 'services' });
         }, 500);
       }
+      break;
+    }
+    case 'file-stat': {
+      const s = m.stat || {};
+      const info = 'Path: ' + m.path + '\nSize: ' + fmtSize(s.size || 0) + '\nMode: ' + (s.mode || '') + '\nModified: ' + (s.mtime || '');
+      alert(info);
+      break;
+    }
+    case 'file-delete-result': {
+      const pane = m._pane || 0;
+      const p = filesState.tabs[filesState.activeTab] || '.';
+      loadFilesPane(pane, p);
+      break;
+    }
+    case 'file-result': {
+      const pane = 0;
+      const p = filesState.tabs[filesState.activeTab] || '.';
+      loadFilesPane(pane, p);
       break;
     }
   }
@@ -162,8 +185,10 @@ function renderDashboard(d) {
 }
 
 /* ═══════════════════════════════════════
-   FILES - GUI Grid (Explorer/Thunar Style)
+   FILES - Thunar-style Explorer
    ═══════════════════════════════════════ */
+const filesState = { activePane: 0, split: false, showHidden: false, tabs: [{ path: '.' }], activeTab: 0, hist: [[], []] };
+
 function getFileIcon(name, type) {
   if (type === 'dir') return '&#x1F4C1;';
   if (type === 'link') return '&#x1F517;';
@@ -181,52 +206,263 @@ function getFileIcon(name, type) {
   return icons[ext] || '&#x1F4C4;';
 }
 
-function renderFiles(msg) {
-  currentPath = msg.path;
-  const c = $('#files-container');
-  const isRoot = msg.path === '/';
-  const parent = isRoot ? '/' : msg.path.replace(/\/+$/, '').replace(/\/[^/]*$/, '') || '/';
+function fpPaneId() { return filesState.activePane === 0 ? '' : '2'; }
+
+function rfile(gridId, bcId, path, entries, pane) {
+  const grid = document.getElementById(gridId);
+  if (!grid) return;
+  const isRoot = path === '/';
+  const parent = isRoot ? '/' : path.replace(/\/+$/, '').replace(/\/[^/]*$/, '') || '/';
+
+  /* Filter hidden */
+  const filtered = filesState.showHidden ? entries : entries.filter(e => !e.name.startsWith('.'));
+
+  /* Filter by search */
+  const searchEl = document.getElementById('files-search');
+  const q = (searchEl?.value || '').trim().toLowerCase();
+  const searched = q ? filtered.filter(e => e.name.toLowerCase().includes(q)) : filtered;
 
   let h = '';
   if (!isRoot) {
-    h += '<div class="file-item file-up-item" data-path="' + parent.replace(/"/g, '&quot;') + '">';
+    h += '<div class="file-item file-up-item" data-path="' + parent.replace(/"/g, '&quot;') + '" data-pane="' + pane + '">';
     h += '<div class="file-icon">&#x2190;</div><div class="file-name">..</div></div>';
   }
-  for (const e of msg.entries) {
-    const path = (msg.path.replace(/\/$/, '') + '/' + e.name).replace(/"/g, '&quot;');
+  for (const e of searched) {
+    const p = (path.replace(/\/$/, '') + '/' + e.name).replace(/"/g, '&quot;');
     const icon = getFileIcon(e.name, e.type);
     const cls = e.type === 'dir' ? 'file-folder' : (e.type === 'link' ? 'file-link' : '');
-    h += '<div class="file-item ' + cls + '" data-path="' + path + '" data-type="' + e.type + '">';
+    h += '<div class="file-item ' + cls + '" data-path="' + p + '" data-type="' + e.type + '" data-pane="' + pane + '">';
     h += '<div class="file-icon">' + icon + '</div>';
     h += '<div class="file-name">' + esc(e.name) + (e.type === 'dir' ? '/' : '') + '</div>';
-    if (e.type !== 'dir') {
-      h += '<div class="file-size-sm">' + fmtSize(e.size) + '</div>';
-    }
+    if (e.type !== 'dir') h += '<div class="file-size-sm">' + fmtSize(e.size) + '</div>';
     h += '</div>';
   }
-  c.innerHTML = h || '<div class="empty-msg">Empty directory</div>';
+  grid.innerHTML = h || '<div class="empty-msg">' + (q ? 'No results for "' + q + '"' : 'Empty directory') + '</div>';
 
-  renderBreadcrumb(msg.path);
-}
+  /* Status */
+  const statusL = document.getElementById('fp-status-left');
+  if (statusL) statusL.textContent = searched.length + (q ? ' matches' : ' items');
+  const dirs = entries.filter(e => e.type === 'dir').length;
+  const fcount = entries.length - dirs;
+  const statusR = document.getElementById('fp-status-right');
+  if (statusR) statusR.textContent = path + ' — ' + dirs + ' folders, ' + fcount + ' files';
 
-function renderBreadcrumb(path) {
-  const bc = $('#files-breadcrumb');
-  if (!bc) return;
-  const isAbs = path.startsWith('/');
-  const parts = path === '/' ? ['/'] : path.replace(/\/$/, '').split('/').filter(Boolean);
-  let h = '';
-  if (isAbs && path !== '/') {
-    h += '<span data-path="/">/</span>';
-  }
-  for (let i = 0; i < parts.length; i++) {
-    if (i > 0 || (isAbs && path !== '/')) {
-      h += '<span class="bc-sep">&#x276F;</span>';
+  /* Breadcrumb */
+  const bc = document.getElementById(bcId);
+  if (bc) {
+    const parts = path === '/' ? ['/'] : path.replace(/\/$/, '').split('/').filter(Boolean);
+    let b = '';
+    if (path !== '/') b += '<span data-path="/">/</span>';
+    for (let i = 0; i < parts.length; i++) {
+      if (i > 0 || path !== '/') b += '<span class="bc-sep">&#x276F;</span>';
+      const fullPath = (path.startsWith('/') ? '/' : '') + parts.slice(0, i + 1).join('/');
+      b += '<span data-path="' + fullPath.replace(/"/g, '&quot;') + '">' + esc(parts[i]) + '</span>';
     }
-    const fullPath = isAbs ? '/' + parts.slice(0, i + 1).join('/') : parts.slice(0, i + 1).join('/');
-    h += '<span data-path="' + fullPath.replace(/"/g, '&quot;') + '">' + esc(parts[i]) + '</span>';
+    bc.innerHTML = b;
   }
-  bc.innerHTML = h;
 }
+
+function loadFilesPane(pane, path) {
+  const s = pane === 0 ? '' : '2';
+  send({ type: 'files', path: path || '.', _pane: pane });
+  const inp = document.getElementById('fp' + s + '-path');
+  if (inp) inp.value = path || '.';
+}
+
+function renderFiles(msg) {
+  const pane = msg._pane || 0;
+  const s = pane === 0 ? '' : '2';
+  if (pane === 0 && filesState.tabs[filesState.activeTab]) filesState.tabs[filesState.activeTab] = msg.path;
+  if (msg._br) {
+    brFiles = msg.entries.map(e => ({ path: msg.path + '/' + e.name, name: e.name, type: e.type }));
+    renderBrPreview();
+    document.getElementById('files-bulk-rename').style.display = 'flex';
+    return;
+  }
+  rfile('fp' + s + '-container', 'fp' + s + '-breadcrumb', msg.path, msg.entries, pane);
+  if (pane === 0) {
+    filesState.tabs[filesState.activeTab] = msg.path;
+    renderTabs();
+  }
+}
+
+function renderTabs() {
+  const bar = document.getElementById('files-tabbar');
+  if (!bar) return;
+  const tabs = filesState.tabs;
+  let h = '';
+  for (let i = 0; i < tabs.length; i++) {
+    const active = i === filesState.activeTab ? ' active' : '';
+    const p = tabs[i] || '.';
+    const label = p === '/' ? '/' : p.split('/').filter(Boolean).pop() || 'Home';
+    h += '<div class="files-tab' + active + '" data-tab="' + i + '">'
+      + '<span class="files-tab-label">&#x1F4C1; ' + esc(label) + '</span>'
+      + '<button class="files-tab-close" data-tab="' + i + '">&times;</button></div>';
+  }
+  h += '<button class="files-tab-new" id="files-tab-new" title="New Tab (Ctrl+T)">+</button>';
+  bar.innerHTML = h;
+}
+
+function switchTab(idx) {
+  filesState.activeTab = idx;
+  const p = filesState.tabs[idx] || '.';
+  loadFilesPane(0, p);
+  renderTabs();
+}
+
+/* ── Context menu ── */
+let filesCtxTarget = null;
+
+document.addEventListener('contextmenu', (e) => {
+  const panel = document.querySelector('.panel.active');
+  if (!panel || panel.id !== 'panel-files') return;
+  const fi = e.target.closest('.file-item');
+  if (!fi) { const cm = document.getElementById('files-context-menu'); if (cm) cm.style.display = 'none'; return; }
+  e.preventDefault();
+  filesCtxTarget = fi;
+  const cm = document.getElementById('files-context-menu');
+  if (!cm) return;
+  cm.style.display = 'block';
+  cm.style.left = Math.min(e.clientX, window.innerWidth - 200) + 'px';
+  cm.style.top = Math.min(e.clientY, window.innerHeight - 250) + 'px';
+});
+
+document.addEventListener('click', () => {
+  const cm = document.getElementById('files-context-menu');
+  if (cm) cm.style.display = 'none';
+});
+
+$('#files-context-menu')?.addEventListener('click', (e) => {
+  const item = e.target.closest('.files-cm-item');
+  if (!item || !filesCtxTarget) return;
+  const action = item.dataset.action;
+  const path = filesCtxTarget.dataset.path;
+  const type = filesCtxTarget.dataset.type;
+  const pane = parseInt(filesCtxTarget.dataset.pane) || 0;
+
+  if (action === 'open') {
+    if (type === 'dir') loadFilesPane(pane, path);
+    return;
+  }
+  if (action === 'delete') {
+    if (confirm('Delete "' + path + '"?')) send({ type: 'file-delete', path: path });
+    return;
+  }
+  if (action === 'new-folder') {
+    const name = prompt('Folder name:');
+    if (name) send({ type: 'file-mkdir', path: (filesState.tabs[filesState.activeTab] || '.') + '/' + name });
+    return;
+  }
+  if (action === 'new-file') {
+    const name = prompt('File name:');
+    if (name) send({ type: 'file-create', path: (filesState.tabs[filesState.activeTab] || '.') + '/' + name });
+    return;
+  }
+  if (action === 'rename') {
+    const name = prompt('New name:', path.split('/').pop());
+    if (name) send({ type: 'file-rename', path: path, name: name });
+    return;
+  }
+  if (action === 'bulk-rename') {
+    openBulkRename();
+    return;
+  }
+  if (action === 'properties') {
+    send({ type: 'file-stat', path: path, _pane: pane });
+    return;
+  }
+});
+
+/* ── Bulk rename ── */
+let brFiles = [];
+
+function openBulkRename() {
+  const sel = document.querySelectorAll('#panel-files .file-item.selected');
+  brFiles = sel.length > 0 ? Array.from(sel).map(el => ({
+    path: el.dataset.path, name: el.dataset.path.split('/').pop(), type: el.dataset.type
+  })) : [];
+  if (brFiles.length === 0) {
+    const curPath = filesState.tabs[filesState.activeTab] || '.';
+    send({ type: 'files', path: curPath, _br: true });
+    return;
+  }
+  renderBrPreview();
+  document.getElementById('files-bulk-rename').style.display = 'flex';
+}
+
+function renderBrPreview() {
+  const list = document.getElementById('br-preview-list');
+  if (!list) return;
+  if (brFiles.length === 0) { list.innerHTML = '<div class="empty-msg">Select files first</div>'; return; }
+  const srch = document.getElementById('br-search')?.value || '';
+  const repl = document.getElementById('br-replace')?.value || '';
+  const prefix = document.getElementById('br-prefix')?.value || '';
+  const suffix = document.getElementById('br-suffix')?.value || '';
+  const numTpl = document.getElementById('br-numbering')?.value || '';
+  const numFiles = document.getElementById('br-number-files')?.checked;
+  const numDirs = document.getElementById('br-number-dirs')?.checked;
+  let n = 0;
+  let h = '';
+  for (let i = 0; i < Math.min(brFiles.length, 40); i++) {
+    const f = brFiles[i];
+    let newName = f.name;
+    if (srch) newName = newName.split(srch).join(repl);
+    if (numFiles && f.type !== 'dir') { newName = prefix + n + suffix; n++; }
+    else if (numDirs && f.type === 'dir') { newName = prefix + n + suffix; n++; }
+    else { newName = prefix + newName + suffix; }
+    if (numTpl) {
+      newName = numTpl.replace('{n}', String(i));
+      if (!numFiles && !numDirs) newName = prefix + newName + suffix;
+    }
+    h += '<div>' + esc(f.name) + ' → ' + esc(newName) + '</div>';
+  }
+  list.innerHTML = h || '<div>No files</div>';
+}
+
+['br-search', 'br-replace', 'br-prefix', 'br-suffix', 'br-numbering', 'br-number-files', 'br-number-dirs'].forEach(id => {
+  document.getElementById(id)?.addEventListener('input', renderBrPreview);
+  document.getElementById(id)?.addEventListener('change', renderBrPreview);
+});
+
+$('#br-apply')?.addEventListener('click', () => {
+  if (brFiles.length === 0) return;
+  const srch = document.getElementById('br-search')?.value || '';
+  const repl = document.getElementById('br-replace')?.value || '';
+  const prefix = document.getElementById('br-prefix')?.value || '';
+  const suffix = document.getElementById('br-suffix')?.value || '';
+  const numTpl = document.getElementById('br-numbering')?.value || '';
+  const numFiles = document.getElementById('br-number-files')?.checked;
+  const numDirs = document.getElementById('br-number-dirs')?.checked;
+  let n = 0;
+  for (const f of brFiles) {
+    let newName = f.name;
+    if (srch) newName = newName.split(srch).join(repl);
+    if (numFiles && f.type !== 'dir') { newName = prefix + n + suffix; n++; }
+    else if (numDirs && f.type === 'dir') { newName = prefix + n + suffix; n++; }
+    else { newName = prefix + newName + suffix; }
+    if (numTpl) {
+      newName = numTpl.replace('{n}', String(n));
+      if (numFiles || numDirs) n++;
+      else newName = prefix + newName + suffix;
+    }
+    const dir = f.path.substring(0, f.path.lastIndexOf('/') + 1) || '';
+    send({ type: 'file-rename', path: f.path, newPath: dir + newName });
+  }
+  document.getElementById('files-bulk-rename').style.display = 'none';
+});
+
+$('#br-cancel')?.addEventListener('click', () => {
+  document.getElementById('files-bulk-rename').style.display = 'none';
+});
+
+/* ── Select file items with Ctrl+click ── */
+document.addEventListener('click', (e) => {
+  const fi = e.target.closest('.file-item');
+  if (!fi) return;
+  if (e.ctrlKey || e.metaKey) {
+    fi.classList.toggle('selected');
+  }
+});
 
 /* ═══════════════════════════════════════
    PROCESSES - Task Manager Style
@@ -283,7 +519,9 @@ function renderServices(msg) {
     const label = running ? 'Stop' : 'Start';
     const action = running ? 'stop' : 'start';
     const btnCls = running ? 'stop' : 'start';
-    h += '<tr><td><button class="btn-svc ' + btnCls + '" data-svc="' + esc(s.name) + '" data-action="' + action + '">' + label + '</button></td>';
+    h += '<tr><td style="display:flex;gap:2px">'
+      + '<button class="btn-svc ' + btnCls + '" data-svc="' + esc(s.name) + '" data-action="' + action + '" style="padding:2px 6px;font-size:9px">' + label + '</button>'
+      + '<button class="btn-restart-svc" data-svc="' + esc(s.name) + '" title="Restart" style="padding:2px 5px;font-size:9px;background:rgba(210,153,34,0.08);border:1px solid rgba(210,153,34,0.2);color:#d29922;border-radius:3px;cursor:pointer;font-family:inherit">\u{1F504}</button></td>';
     h += '<td>' + esc(s.name) + '</td>';
     h += '<td><span class="badge ' + badge + '">' + esc(s.status) + '</span></td>';
     h += '<td>' + esc(s.description || '') + '</td></tr>';
@@ -405,11 +643,6 @@ function clearTimers() {
 
 function sendCmd(cmd) { if (activeId) send({ type: 'input', id: activeId, data: cmd + '\n' }); }
 
-function loadFiles(path) {
-  if ($('#fp')) $('#fp').value = path;
-  send({ type: 'files', path: path });
-}
-
 /* ═══════════════════════════════════════
    EVENT DELEGATION (click on #app)
    ═══════════════════════════════════════ */
@@ -417,7 +650,10 @@ $('#app').addEventListener('click', (e) => {
   const t = e.target;
 
   const nav = t.closest('.nav-btn');
-  if (nav) return switchPanel(nav.dataset.panel);
+  if (nav) {
+    if (nav.id === 'win7-btn') { if (window.toggleWin7) window.toggleWin7(); return; }
+    return switchPanel(nav.dataset.panel);
+  }
 
   if (t.closest('#new-btn')) return send({ type: 'create' });
 
@@ -430,74 +666,260 @@ $('#app').addEventListener('click', (e) => {
   const q = t.closest('.q-btn');
   if (q?.dataset.cmd) { switchPanel('terminal'); sendCmd(q.dataset.cmd); }
 
-  if (t.closest('#files-go')) {
-    const path = $('#fp')?.value || '.';
-    loadFiles(path);
+  const q2 = t.closest('.q2-btn');
+  if (q2?.dataset.cmd) { switchPanel('terminal'); sendCmd(q2.dataset.cmd); }
+
+  const appCard = t.closest('.app-card');
+  if (appCard && appCard.dataset.app) {
+    const app = appCard.dataset.app;
+    if (app === 'win7') { document.getElementById('win7-btn')?.click(); }
+    else if (app === 'run') { if (window.Win7) Win7.openRunDialog(); else switchPanel('terminal'); }
+    else { switchPanel(app); }
     return;
   }
 
-  if (t.closest('#files-back')) {
-    if (historyStack.length > 0) {
-      const prev = historyStack.pop();
-      loadFiles(prev);
+  /* File tabs */
+  if (t.closest('#files-tab-new')) {
+    const idx = filesState.tabs.length;
+    filesState.tabs.push('.');
+    filesState.activeTab = idx;
+    switchTab(idx);
+    return;
+  }
+  const tabClose = t.closest('.files-tab-close');
+  if (tabClose) {
+    e.stopPropagation();
+    const idx = parseInt(tabClose.dataset.tab);
+    if (filesState.tabs.length <= 1) return;
+    filesState.tabs.splice(idx, 1);
+    if (filesState.activeTab >= filesState.tabs.length) filesState.activeTab = filesState.tabs.length - 1;
+    if (filesState.activeTab >= idx && idx > 0) filesState.activeTab--;
+    switchTab(filesState.activeTab);
+    return;
+  }
+  const tabLabel = t.closest('.files-tab');
+  if (tabLabel && !t.closest('.files-tab-close')) {
+    const idx = parseInt(tabLabel.dataset.tab);
+    switchTab(idx);
+    return;
+  }
+
+  /* Split pane toggle */
+  if (t.closest('#files-btn-split')) {
+    filesState.split = !filesState.split;
+    const pane2 = document.getElementById('files-pane-1');
+    if (pane2) pane2.style.display = filesState.split ? 'flex' : 'none';
+    t.closest('#files-btn-split')?.classList.toggle('active', filesState.split);
+    return;
+  }
+
+  /* Hidden files toggle */
+  if (t.closest('#files-btn-hidden')) {
+    filesState.showHidden = !filesState.showHidden;
+    t.closest('#files-btn-hidden')?.classList.toggle('active', filesState.showHidden);
+    const pane = filesState.activePane;
+    const p = filesState.tabs[filesState.activeTab] || '.';
+    loadFilesPane(pane, p);
+    return;
+  }
+
+  /* Split pane 2 close */
+  if (t.closest('#fp2-close')) {
+    filesState.split = false;
+    const pane2 = document.getElementById('files-pane-1');
+    if (pane2) pane2.style.display = 'none';
+    document.getElementById('files-btn-split')?.classList.remove('active');
+    return;
+  }
+
+  /* Pane-specific Go buttons */
+  if (t.closest('#fp-go')) {
+    const path = document.getElementById('fp-path')?.value || '.';
+    loadFilesPane(0, path);
+    return;
+  }
+  if (t.closest('#fp2-go')) {
+    const path = document.getElementById('fp2-path')?.value || '.';
+    loadFilesPane(1, path);
+    return;
+  }
+
+  /* Pane nav buttons */
+  const navMap = { 'fp-back': [0, 'back'], 'fp-forward': [0, 'forward'], 'fp-up': [0, 'up'], 'fp-home': [0, 'home'],
+    'fp2-back': [1, 'back'], 'fp2-forward': [1, 'forward'], 'fp2-up': [1, 'up'] };
+  for (const [id, [pane, dir]] of Object.entries(navMap)) {
+    const btn = t.closest('#' + id);
+    if (!btn) continue;
+    const s = pane === 0 ? '' : '2';
+    const cur = document.getElementById('fp' + s + '-path')?.value || '.';
+    if (dir === 'home') { loadFilesPane(pane, '.'); return; }
+    if (dir === 'up') {
+      const up = cur === '/' ? '/' : cur.replace(/\/+$/, '').replace(/\/[^/]*$/, '') || '/';
+      loadFilesPane(pane, up); return;
     }
+    if (dir === 'back') {
+      const hist = filesState.hist[pane];
+      if (hist.length > 0) {
+        const prev = hist.pop();
+        const curPath = document.getElementById('fp' + s + '-path')?.value || '.';
+        filesState.hist[pane + '_fwd'] = filesState.hist[pane + '_fwd'] || [];
+        filesState.hist[pane + '_fwd'].push(curPath);
+        loadFilesPane(pane, prev);
+      }
+      return;
+    }
+    if (dir === 'forward') {
+      const fwd = filesState.hist[pane + '_fwd'];
+      if (fwd && fwd.length > 0) {
+        const next = fwd.pop();
+        filesState.hist[pane] = filesState.hist[pane] || [];
+        filesState.hist[pane].push(document.getElementById('fp' + s + '-path')?.value || '.');
+        loadFilesPane(pane, next);
+      }
+      return;
+    }
+  }
+
+  /* Sidebar items */
+  const si2 = t.closest('.files-sidebar-item');
+  if (si2 && si2.dataset.path) {
+    document.querySelectorAll('.files-sidebar-item').forEach(el => el.classList.remove('active'));
+    si2.classList.add('active');
+    const pane = filesState.activePane;
+    const p = si2.dataset.path;
+    loadFilesPane(pane, p);
     return;
   }
 
+  /* File items */
   const fileItem = t.closest('.file-item');
   if (fileItem) {
     const path = fileItem.dataset.path;
     const type = fileItem.dataset.type;
+    const pane = parseInt(fileItem.dataset.pane) || 0;
     if (path) {
-      if (type === 'dir') {
-        historyStack.push(currentPath);
-        loadFiles(path);
-      } else if (fileItem.classList.contains('file-up-item')) {
-        loadFiles(path);
+      if (type === 'dir' || fileItem.classList.contains('file-up-item')) {
+        const s = pane === 0 ? '' : '2';
+        const cur = document.getElementById('fp' + s + '-path')?.value || '.';
+        filesState.hist[pane] = filesState.hist[pane] || [];
+        filesState.hist[pane].push(cur);
+        loadFilesPane(pane, path);
       }
     }
     return;
   }
 
+  /* Breadcrumbs */
   const bcSpan = t.closest('.files-breadcrumb span:not(.bc-sep)');
   if (bcSpan && bcSpan.dataset.path) {
-    loadFiles(bcSpan.dataset.path);
+    const pane = filesState.activePane;
+    loadFilesPane(pane, bcSpan.dataset.path);
     return;
   }
 
+  /* Process table sort */
   const th = t.closest('th[data-sort]');
   if (th) {
     const key = th.dataset.sort;
     if (!key) return;
     if (sortKey === key) sortDir *= -1; else { sortKey = key; sortDir = 1; }
     const active = document.querySelector('.panel.active');
-    if (active && active.id === 'panel-processes') {
-      send({ type: 'processes' });
-    }
+    if (active && active.id === 'panel-processes') send({ type: 'processes' });
     return;
   }
 
   const killBtn = t.closest('.btn-kill');
   if (killBtn && killBtn.dataset.pid) {
     send({ type: 'kill', pid: parseInt(killBtn.dataset.pid) });
-    killBtn.textContent = '...';
-    killBtn.disabled = true;
+    killBtn.textContent = '...'; killBtn.disabled = true;
     return;
   }
 
   const svcBtn = t.closest('.btn-svc');
   if (svcBtn && svcBtn.dataset.svc && svcBtn.dataset.action) {
-    send({ type: 'service', name: svcBtn.dataset.svc, action: svcBtn.dataset.action });
-    svcBtn.textContent = '...';
-    svcBtn.disabled = true;
+    send({ type: svcBtn.dataset.action === 'restart' ? 'restart' : 'service', name: svcBtn.dataset.svc, action: svcBtn.dataset.action });
+    svcBtn.textContent = '...'; svcBtn.disabled = true;
+    return;
+  }
+
+  const restartBtn = t.closest('.btn-restart-svc');
+  if (restartBtn && restartBtn.dataset.svc) {
+    send({ type: 'restart', pid: restartBtn.dataset.svc });
+    restartBtn.textContent = '...'; restartBtn.disabled = true;
+    setTimeout(() => send({ type: 'services' }), 2000);
+    return;
+  }
+
+  const cleanBtn = t.closest('.btn-clean-cache');
+  if (cleanBtn) {
+    cleanBtn.textContent = 'Cleaning...'; cleanBtn.disabled = true;
+    send({ type: 'clean-cache' });
+    setTimeout(() => { cleanBtn.textContent = '\u{1F9F9} Clean Cache'; cleanBtn.disabled = false; }, 5000);
     return;
   }
 });
 
-$('#fp')?.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') loadFiles(e.target.value || '.');
+/* File pane Enter keys */
+document.getElementById('fp-path')?.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') loadFilesPane(0, e.target.value || '.');
+});
+document.getElementById('fp2-path')?.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') loadFilesPane(1, e.target.value || '.');
 });
 
+/* Search on input */
+document.getElementById('files-search')?.addEventListener('input', () => {
+  const pane = filesState.activePane;
+  const p = filesState.tabs[filesState.activeTab] || '.';
+  loadFilesPane(pane, p);
+});
+
+/* Keyboard shortcuts for file panel */
+document.addEventListener('keydown', (e) => {
+  const panel = document.querySelector('.panel.active');
+  if (!panel || panel.id !== 'panel-files') return;
+
+  if (e.ctrlKey && e.key === 't') {
+    e.preventDefault();
+    const idx = filesState.tabs.length;
+    filesState.tabs.push('.');
+    filesState.activeTab = idx;
+    switchTab(idx);
+    return;
+  }
+  if (e.ctrlKey && e.key === 'w') {
+    e.preventDefault();
+    if (filesState.tabs.length <= 1) return;
+    filesState.tabs.splice(filesState.activeTab, 1);
+    if (filesState.activeTab >= filesState.tabs.length) filesState.activeTab = filesState.tabs.length - 1;
+    switchTab(filesState.activeTab);
+    return;
+  }
+  if (e.key === 'F3') {
+    e.preventDefault();
+    filesState.split = !filesState.split;
+    const p2 = document.getElementById('files-pane-1');
+    if (p2) p2.style.display = filesState.split ? 'flex' : 'none';
+    document.getElementById('files-btn-split')?.classList.toggle('active', filesState.split);
+    return;
+  }
+  if (e.ctrlKey && e.key === 'e') {
+    e.preventDefault();
+    filesState.showHidden = !filesState.showHidden;
+    document.getElementById('files-btn-hidden')?.classList.toggle('active', filesState.showHidden);
+    const p = filesState.tabs[filesState.activeTab] || '.';
+    loadFilesPane(filesState.activePane, p);
+    return;
+  }
+  if (e.ctrlKey && e.key === 'f') {
+    e.preventDefault();
+    const sb = document.getElementById('files-search');
+    if (sb) { sb.focus(); sb.select(); }
+    return;
+  }
+});
+
+/* Proc search */
 $('#proc-search')?.addEventListener('input', () => {
   const active = document.querySelector('.panel.active');
   if (active && active.id === 'panel-processes') send({ type: 'processes' });

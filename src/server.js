@@ -246,6 +246,21 @@ wss.on('connection', (ws) => {
           });
           break;
         case 'close': killTerminal(msg.id); break;
+        case 'restart': {
+          const pid = msg.pid;
+          if (pid) {
+            exec('systemctl restart ' + pid + ' 2>/dev/null || service ' + pid + ' restart 2>/dev/null || kill -HUP ' + pid, { timeout: 10000 }, (err) => {
+              send(ws, { type: 'service-result', name: pid, action: 'restart', success: !err, error: err ? err.message : null });
+            });
+          }
+          break;
+        }
+        case 'clean-cache':
+          exec('sync && echo 3 > /proc/sys/vm/drop_caches 2>/dev/null; apt-get clean -y 2>/dev/null; npm cache clean --force 2>/dev/null; journalctl --vacuum-time=1d 2>/dev/null; echo "Cache cleaned: $(df -h / | awk \'NR==2{print $4}\') free"', { timeout: 30000 }, (err, stdout) => {
+            send(ws, { type: 'cmdout', id: 0, data: stdout || (err ? 'Clean failed: ' + err.message : 'Done') });
+            getDashboard().then(data => send(ws, { type: 'dashboard', data }));
+          });
+          break;
         case 'kill':
           exec('kill ' + msg.pid, { timeout: 3000 }, (err) => {
             send(ws, { type: 'kill-result', pid: msg.pid, success: !err, error: err ? err.message : null });
@@ -269,6 +284,29 @@ wss.on('connection', (ws) => {
         case 'file-mkdir':
           exec('mkdir -p ' + JSON.stringify(msg.path), { timeout: 5000 }, (err) => {
             send(ws, { type: 'file-result', action: 'mkdir', path: msg.path, success: !err, error: err ? err.message : null });
+          });
+          break;
+        case 'file-create':
+          exec('touch ' + JSON.stringify(msg.path), { timeout: 5000 }, (err) => {
+            send(ws, { type: 'file-result', action: 'create', path: msg.path, success: !err, error: err ? err.message : null });
+          });
+          break;
+        case 'file-stat':
+          exec('stat -c "%s|%a|%y" ' + JSON.stringify(msg.path), { timeout: 5000 }, (err, stdout) => {
+            const parts = stdout ? stdout.trim().split('|') : [];
+            send(ws, { type: 'file-stat', path: msg.path, _pane: msg._pane || 0,
+              stat: { size: parts[0] || 0, mode: parts[1] || '', mtime: parts[2] || '' },
+              success: !err, error: err ? err.message : null });
+          });
+          break;
+        case 'file-copy':
+          exec('cp -r ' + JSON.stringify(msg.path) + ' ' + JSON.stringify(msg.dest), { timeout: 10000 }, (err) => {
+            send(ws, { type: 'file-result', action: 'copy', path: msg.path, success: !err, error: err ? err.message : null });
+          });
+          break;
+        case 'file-move':
+          exec('mv ' + JSON.stringify(msg.path) + ' ' + JSON.stringify(msg.dest), { timeout: 10000 }, (err) => {
+            send(ws, { type: 'file-result', action: 'move', path: msg.path, success: !err, error: err ? err.message : null });
           });
           break;
         case 'cmd': {

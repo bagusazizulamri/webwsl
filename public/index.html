@@ -20,16 +20,16 @@
 <div id="app">
   <aside id="sidebar">
     <div class="sidebar-h">
-      <div class="logo"><span class="logo-icon">&gt;_</span><span class="logo-t">WebWSL</span></div>
+      <div class="logo"><span class="logo-icon">&#x2699;</span><span class="logo-t">WSL Command Center</span></div>
       <div class="status"><span class="dot" id="dot"></span><span id="status-lbl">Connecting...</span></div>
     </div>
 
     <nav class="nav" id="nav">
-      <button class="nav-btn active" data-panel="terminal">&#x3E;&#x5F; Terminal</button>
-      <button class="nav-btn" data-panel="dashboard">&#x2630; Dash</button>
+      <button class="nav-btn active" data-panel="dashboard">&#x1F3E0; Home</button>
+      <button class="nav-btn" data-panel="terminal">&#x1F4BB; Terminal</button>
       <button class="nav-btn" data-panel="files">&#x1F4C1; Files</button>
-      <button class="nav-btn" data-panel="processes">&#x2699; Proc</button>
-      <button class="nav-btn" data-panel="services">&#x1F527; Svc</button>
+      <button class="nav-btn" data-panel="processes">&#x2699; Processes</button>
+      <button class="nav-btn" data-panel="services">&#x1F527; Services</button>
       <button class="nav-btn" id="win7-btn"><span style="font-size:16px">&#x229E;</span> Win7</button>
     </nav>
 
@@ -50,12 +50,12 @@
   </aside>
 
   <main id="main">
-    <div id="panel-terminal" class="panel active"><div class="term-c" id="term-c"></div></div>
+    <div id="panel-terminal" class="panel"><div class="term-c" id="term-c"></div></div>
 
-    <!-- ═══════════════════ DASHBOARD ═══════════════════ -->
-    <div id="panel-dashboard" class="panel">
-      <div class="tool-panel">
-        <div class="tool-h"><h1>Dashboard</h1></div>
+    <!-- ═══════════════════ DASHBOARD (HOME) ═══════════════════ -->
+    <div id="panel-dashboard" class="panel active">
+      <div class="tool-panel home-panel">
+        <div class="tool-h"><h1>System Overview</h1><span class="home-subtitle">WSL Command Center</span></div>
         <div class="dash-body" id="dash-body">
           <div class="dash-info-row">
             <div class="dash-info-card"><span class="dash-info-lbl">Hostname</span><span class="dash-info-val" id="info-hostname">-</span></div>
@@ -97,24 +97,190 @@
               <div class="gauge-info" id="info-disk"></div>
             </div>
           </div>
+
+          <!-- ═══ APP LAUNCHER ═══ -->
+          <div class="home-section">
+            <div class="home-section-h">&#x1F4F1; Running Applications</div>
+            <div class="app-launcher" id="app-launcher">
+              <div class="app-card" data-app="terminal">
+                <div class="app-card-icon">&#x1F4BB;</div>
+                <div class="app-card-name">Terminal</div>
+                <div class="app-card-desc">Shell &#x2192; active</div>
+              </div>
+              <div class="app-card" data-app="files">
+                <div class="app-card-icon">&#x1F4C1;</div>
+                <div class="app-card-name">File Explorer</div>
+                <div class="app-card-desc">Browse files</div>
+              </div>
+              <div class="app-card" data-app="processes">
+                <div class="app-card-icon">&#x2699;</div>
+                <div class="app-card-name">Processes</div>
+                <div class="app-card-desc">Task manager</div>
+              </div>
+              <div class="app-card" data-app="services">
+                <div class="app-card-icon">&#x1F527;</div>
+                <div class="app-card-name">Services</div>
+                <div class="app-card-desc">System services</div>
+              </div>
+              <div class="app-card" data-app="win7">
+                <div class="app-card-icon">&#x229E;</div>
+                <div class="app-card-name">Windows 7</div>
+                <div class="app-card-desc">Desktop mode</div>
+              </div>
+              <div class="app-card" data-app="run">
+                <div class="app-card-icon">&#x23FA;</div>
+                <div class="app-card-name">Run Command</div>
+                <div class="app-card-desc">Quick execute</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="home-section">
+            <div class="home-section-h">&#x26A1; Quick Commands</div>
+            <div class="quick-cmds">
+              <button class="q2-btn" data-cmd="apt update && apt upgrade -y">&#x1F4E6; System Update</button>
+              <button class="q2-btn" data-cmd="df -h">&#x1F4C0; Disk Usage</button>
+              <button class="q2-btn" data-cmd="free -h">&#x1F4CA; Memory</button>
+              <button class="q2-btn" data-cmd="uptime">&#x23F1; Uptime</button>
+              <button class="q2-btn" data-cmd="ip addr show">&#x1F4F6; Network</button>
+              <button class="q2-btn" data-cmd="who">&#x1F464; Users</button>
+            </div>
+          </div>
+
+          <div class="home-section">
+            <div class="home-section-h">&#x1F9F9; System Maintenance</div>
+            <div class="quick-cmds">
+              <button class="q2-btn btn-clean-cache">&#x1F9F9; Clean Cache</button>
+              <button class="q2-btn" data-cmd="systemctl daemon-reload">&#x1F504; Daemon Reload</button>
+              <button class="q2-btn" data-cmd="journalctl --vacuum-time=1d 2>/dev/null; echo 'Logs trimmed'">&#x1F4DD; Trim Logs</button>
+              <button class="q2-btn" data-cmd="free -h && df -h / && echo '---' && uptime">&#x2139; System Info</button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
 
-    <!-- ═══════════════════ FILES ═══════════════════ -->
+    <!-- ═══════════════════ FILES (Thunar-style) ═══════════════════ -->
     <div id="panel-files" class="panel">
-      <div class="tool-panel">
-        <div class="tool-h"><h1>Files</h1></div>
-        <div class="files-toolbar">
-          <div class="files-path-row">
-            <button class="files-btn files-btn-nav" id="files-back" title="Back">&#x2190;</button>
-            <div class="files-breadcrumb" id="files-breadcrumb"></div>
-            <input id="fp" class="inp" value="." spellcheck="false">
-            <button class="files-btn files-btn-go" id="files-go">Go</button>
+      <div class="tool-panel files-panel">
+        <div class="tool-h">
+          <h1>Files</h1>
+          <div class="tool-act">
+            <input id="files-search" class="search-inp files-search-inp" placeholder="Search files..." spellcheck="false">
+            <button class="files-tool-btn" id="files-btn-tree" title="Tree View (Ctrl+E)">&#x1F4C2;</button>
+            <button class="files-tool-btn" id="files-btn-split" title="Split Pane (F3)">&#x25F0;</button>
+            <button class="files-tool-btn" id="files-btn-hidden" title="Show Hidden (Ctrl+H)">&#x1F441;</button>
           </div>
         </div>
-        <div id="files-container" class="files-grid">
-          <div class="empty-msg">Enter a path and click Go</div>
+
+        <!-- Tabs bar -->
+        <div class="files-tabbar" id="files-tabbar">
+          <div class="files-tab active" data-tab="0">
+            <span class="files-tab-label">&#x1F4C1; Home</span>
+            <button class="files-tab-close" data-tab="0">&times;</button>
+          </div>
+          <button class="files-tab-new" id="files-tab-new" title="New Tab (Ctrl+T)">+</button>
+        </div>
+
+        <!-- Main content: sidebar + split panes -->
+        <div class="files-main" id="files-main">
+          <!-- Sidebar (tree/bookmarks) -->
+          <div class="files-sidebar" id="files-sidebar">
+            <div class="files-sidebar-section">
+              <div class="files-sidebar-h">&#x1F4C2; Places</div>
+              <div class="files-sidebar-item active" data-path="/">&#x1F4BB; Computer</div>
+              <div class="files-sidebar-item" data-path=".">&#x1F3E0; Home</div>
+              <div class="files-sidebar-item" data-path=".">&#x1F5C2; Desktop</div>
+              <div class="files-sidebar-item" data-path="/tmp">&#x1F4DD; Temp</div>
+              <div class="files-sidebar-sep"></div>
+              <div class="files-sidebar-h">&#x1F4C1; Bookmarks</div>
+            </div>
+          </div>
+
+          <!-- Pane 1 (left/top) -->
+          <div class="files-pane" id="files-pane-0">
+            <div class="files-toolbar">
+              <div class="files-path-row">
+                <button class="files-btn files-btn-nav" id="fp-back" title="Back (Alt+Left)">&#x2190;</button>
+                <button class="files-btn files-btn-nav" id="fp-forward" title="Forward (Alt+Right)">&#x2192;</button>
+                <button class="files-btn files-btn-nav" id="fp-up" title="Up (Alt+Up)">&#x2191;</button>
+                <button class="files-btn files-btn-nav" id="fp-home" title="Home (Alt+Home)">&#x1F3E0;</button>
+                <div class="files-breadcrumb" id="fp-breadcrumb"></div>
+                <input id="fp-path" class="inp" value="." spellcheck="false">
+                <button class="files-btn files-btn-go" id="fp-go">Go</button>
+              </div>
+            </div>
+            <div id="fp-container" class="files-grid">
+              <div class="empty-msg">Loading...</div>
+            </div>
+          </div>
+
+          <!-- Pane 2 (split, hidden by default) -->
+          <div class="files-pane files-pane-split" id="files-pane-1" style="display:none">
+            <div class="files-toolbar">
+              <div class="files-path-row">
+                <button class="files-btn files-btn-nav" id="fp2-back">&#x2190;</button>
+                <button class="files-btn files-btn-nav" id="fp2-forward">&#x2192;</button>
+                <button class="files-btn files-btn-nav" id="fp2-up">&#x2191;</button>
+                <div class="files-breadcrumb" id="fp2-breadcrumb"></div>
+                <input id="fp2-path" class="inp" value="." spellcheck="false">
+                <button class="files-btn files-btn-go" id="fp2-go">Go</button>
+                <button class="files-btn files-btn-nav" id="fp2-close" title="Close Split (F3)" style="font-size:14px">&times;</button>
+              </div>
+            </div>
+            <div id="fp2-container" class="files-grid">
+              <div class="empty-msg">Split pane (F3)</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Status bar -->
+        <div class="files-statusbar" id="files-statusbar">
+          <span id="fp-status-left">0 items</span>
+          <span id="fp-status-right"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- File context menu -->
+    <div id="files-context-menu" class="files-context-menu" style="display:none">
+      <div class="files-cm-item" data-action="open">&#x25B6; Open</div>
+      <div class="files-cm-item" data-action="copy">&#x1F4CB; Copy</div>
+      <div class="files-cm-item" data-action="cut">&#x2702; Cut</div>
+      <div class="files-cm-item" data-action="paste">&#x1F4CE; Paste</div>
+      <div class="files-cm-sep"></div>
+      <div class="files-cm-item" data-action="rename">&#x270F; Rename</div>
+      <div class="files-cm-item" data-action="bulk-rename">&#x1F4DD; Bulk Rename...</div>
+      <div class="files-cm-sep"></div>
+      <div class="files-cm-item" data-action="new-folder">&#x1F4C1; New Folder</div>
+      <div class="files-cm-item" data-action="new-file">&#x1F4C4; New File</div>
+      <div class="files-cm-sep"></div>
+      <div class="files-cm-item" data-action="delete">&#x2716; Delete</div>
+      <div class="files-cm-item" data-action="properties">&#x2699; Properties</div>
+    </div>
+
+    <!-- Bulk rename modal -->
+    <div id="files-bulk-rename" class="files-modal" style="display:none">
+      <div class="files-modal-box">
+        <div class="files-modal-h">&#x1F4DD; Bulk Rename</div>
+        <div class="files-modal-body">
+          <label>Search: <input id="br-search" class="inp" placeholder="text to find" spellcheck="false"></label>
+          <label>Replace: <input id="br-replace" class="inp" placeholder="replacement text" spellcheck="false"></label>
+          <label>Prefix: <input id="br-prefix" class="inp" placeholder="prefix (optional)"></label>
+          <label>Suffix: <input id="br-suffix" class="inp" placeholder="suffix (optional)"></label>
+          <label>Numbering: <input id="br-numbering" class="inp" placeholder="e.g. prefix_{n}_suffix" spellcheck="false"></label>
+          <div>
+            <label><input type="checkbox" id="br-number-files"> Number all files</label>
+            <label><input type="checkbox" id="br-number-dirs"> Number all folders</label>
+          </div>
+          <div class="br-preview" id="br-preview">
+            <div class="br-preview-h">Preview:</div>
+            <div class="br-preview-list" id="br-preview-list">Select files first</div>
+          </div>
+        </div>
+        <div class="files-modal-actions">
+          <button class="files-btn" id="br-apply">Apply</button>
+          <button class="files-btn" id="br-cancel">Cancel</button>
         </div>
       </div>
     </div>
@@ -147,6 +313,7 @@
 
 <!-- ════════════════ Windows 7 Overlay ════════════════ -->
 <div id="win7-overlay">
+  <canvas id="win7-bg-canvas"></canvas>
   <div class="win7-desktop" id="win7-desktop">
     <div class="win7-desktop-icons">
       <div class="win7-desktop-icon" data-shortcut="computer"><div class="win7-d-icon">&#x1F4BB;</div><div class="win7-d-label">Computer</div></div>
@@ -154,17 +321,21 @@
       <div class="win7-desktop-icon" data-shortcut="recycle"><div class="win7-d-icon">&#x1F5D1;</div><div class="win7-d-label">Recycle Bin</div></div>
     </div>
     <div class="win7-context-menu" id="win7-context-menu">
-      <div class="win7-ctx-item" data-action="view">View</div>
+      <div class="win7-ctx-item" data-action="view"><span class="ctx-icon">&#x25A6;</span> View</div>
+      <div class="win7-ctx-item" data-action="sort-by"><span class="ctx-icon">&#x21C5;</span> Sort by</div>
       <div class="win7-ctx-sep"></div>
-      <div class="win7-ctx-item" data-action="refresh">Refresh</div>
+      <div class="win7-ctx-item" data-action="file-paste"><span class="ctx-icon">&#x1F4CB;</span> Paste</div>
       <div class="win7-ctx-sep"></div>
-      <div class="win7-ctx-item" data-action="personalize">Personalize</div>
+      <div class="win7-ctx-item" data-action="file-new-folder"><span class="ctx-icon">&#x1F4C1;</span> New Folder</div>
+      <div class="win7-ctx-item" data-action="file-new-text"><span class="ctx-icon">&#x1F4C4;</span> New Text Document</div>
+      <div class="win7-ctx-sep"></div>
+      <div class="win7-ctx-item" data-action="personalize"><span class="ctx-icon">&#x1F3A8;</span> Personalize</div>
     </div>
     <div class="win7-windows-container" id="win7-windows-container"></div>
   </div>
 
   <div class="win7-taskbar" id="win7-taskbar">
-    <button class="win7-start-btn" id="win7-start-btn">&#x229E;</button>
+    <button class="win7-start-btn" id="win7-start-btn"><svg viewBox="0 0 48 48" width="22" height="22"><path fill="currentColor" d="M24 4L4 24l20 20 20-20z"/><path fill="#fff" d="M24 8L8 24l16 16 16-16z" opacity="0.2"/></svg></button>
     <div class="win7-taskbar-windows" id="win7-taskbar-windows"></div>
     <div class="win7-tray" id="win7-tray">
       <span class="win7-tray-item" id="win7-tray-network" title="Network: Connected">&#x1F4F6;</span>
@@ -177,38 +348,44 @@
   </div>
 
   <div class="win7-start-menu" id="win7-start-menu">
+    <div class="win7-start-header">
+      <div class="win7-start-user-pic">U</div>
+      <div class="win7-start-user-name">User</div>
+    </div>
     <div class="win7-start-body">
       <div class="win7-start-left">
-        <div class="win7-start-item" data-app="terminal">&#x26A1; Terminal</div>
-        <div class="win7-start-item" data-app="dashboard">&#x1F4CA; Dashboard</div>
-        <div class="win7-start-item" data-app="files">&#x1F4C1; Files</div>
-        <div class="win7-start-item" data-app="taskmgr">&#x2699; Task Manager</div>
-        <div class="win7-start-item" data-app="services">&#x1F527; Services</div>
+        <div class="win7-start-item" data-app="terminal"><span class="si-icon">&#x26A1;</span> Terminal</div>
+        <div class="win7-start-item" data-app="dashboard"><span class="si-icon">&#x1F4CA;</span> Dashboard</div>
+        <div class="win7-start-item" data-app="files"><span class="si-icon">&#x1F4C1;</span> Files</div>
+        <div class="win7-start-item" data-app="taskmgr"><span class="si-icon">&#x2699;</span> Task Manager</div>
+        <div class="win7-start-item" data-app="services"><span class="si-icon">&#x1F527;</span> Services</div>
         <div class="win7-start-sep"></div>
-        <div class="win7-start-item all-programs" data-action="all-programs">&#x25BC; All Programs</div>
-        <div class="win7-all-programs-wrap" id="win7-all-programs">
-          <div class="win7-start-item" data-app="terminal">&#x26A1; Command Prompt</div>
-          <div class="win7-start-item" data-app="dashboard">&#x1F4CA; System Dashboard</div>
-          <div class="win7-start-item" data-app="files">&#x1F4C1; File Explorer</div>
-          <div class="win7-start-item" data-app="taskmgr">&#x2699; Task Manager</div>
-          <div class="win7-start-item" data-app="services">&#x1F527; Services</div>
+        <div class="win7-start-item all-programs" data-action="all-programs"><span class="si-icon">&#x25BC;</span> All Programs</div>
+        <div class="win7-all-programs-wrap" id="win7-all-programs-wrap">
+          <div class="win7-start-item" data-app="terminal"><span class="si-icon">&#x26A1;</span> Command Prompt</div>
+          <div class="win7-start-item" data-app="dashboard"><span class="si-icon">&#x1F4CA;</span> System Dashboard</div>
+          <div class="win7-start-item" data-app="files"><span class="si-icon">&#x1F4C1;</span> File Explorer</div>
+          <div class="win7-start-item" data-app="taskmgr"><span class="si-icon">&#x2699;</span> Task Manager</div>
+          <div class="win7-start-item" data-app="services"><span class="si-icon">&#x1F527;</span> Services</div>
           <div class="win7-start-sep"></div>
-          <div class="win7-start-item" data-app="panel">&#x2699; Control Panel</div>
-          <div class="win7-start-item" data-app="computer">&#x1F4BB; Computer</div>
-          <div class="win7-start-item" data-app="devices">&#x1F4F1; Devices</div>
+          <div class="win7-start-item" data-app="panel"><span class="si-icon">&#x2699;</span> Control Panel</div>
+          <div class="win7-start-item" data-app="computer"><span class="si-icon">&#x1F4BB;</span> Computer</div>
+          <div class="win7-start-item" data-app="devices"><span class="si-icon">&#x1F4F1;</span> Devices</div>
         </div>
       </div>
       <div class="win7-start-right">
-        <div class="win7-start-item" data-shortcut="computer">&#x1F4BB; Computer</div>
-        <div class="win7-start-item" data-shortcut="panel">&#x2699; Control Panel</div>
-        <div class="win7-start-item" data-shortcut="devices">&#x1F4F1; Devices</div>
+        <div class="win7-start-item" data-shortcut="computer"><span class="si-icon">&#x1F4BB;</span> Computer</div>
+        <div class="win7-start-item" data-shortcut="panel"><span class="si-icon">&#x2699;</span> Control Panel</div>
+        <div class="win7-start-item" data-shortcut="devices"><span class="si-icon">&#x1F4F1;</span> Devices</div>
         <div class="win7-start-sep"></div>
-        <div class="win7-start-item" data-action="exit">&#x1F6AA; Exit Win7</div>
+        <div class="win7-start-item" data-action="run"><span class="si-icon">&#x1F50D;</span> Run...</div>
+        <div class="win7-start-sep"></div>
+        <div class="win7-start-item" data-action="exit"><span class="si-icon">&#x1F6AA;</span> Exit Win7</div>
       </div>
     </div>
     <div class="win7-start-bottom">
       <div class="win7-start-search"><input type="text" placeholder="Search programs and files..." id="win7-search-input"></div>
-      <button class="win7-start-shutdown" id="win7-start-shutdown" title="Exit Win7 Mode">&#x23FB;</button>
+      <button class="win7-start-shutdown" id="win7-start-shutdown" title="Shut down">&#x23FB;</button>
     </div>
   </div>
 
@@ -229,9 +406,12 @@
     <div class="win7-ctx-sep"></div>
     <div class="win7-ctx-item" data-action="file-copy">Copy</div>
     <div class="win7-ctx-item" data-action="file-cut">Cut</div>
+    <div class="win7-ctx-item" data-action="file-paste">Paste</div>
     <div class="win7-ctx-sep"></div>
     <div class="win7-ctx-item" data-action="file-rename">Rename</div>
     <div class="win7-ctx-item" data-action="file-delete">Delete</div>
+    <div class="win7-ctx-sep"></div>
+    <div class="win7-ctx-item" data-action="file-new-folder">New Folder</div>
     <div class="win7-ctx-sep"></div>
     <div class="win7-ctx-item" data-action="file-props">Properties</div>
   </div>
