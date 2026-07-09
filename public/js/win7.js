@@ -1167,6 +1167,7 @@ const Win7 = {
     const w = this.windows[id];
     if (!w || w.maximized) return;
     if (e.target.closest('.win7-win-btn')) return;
+    if (e.target.closest('.win7-win-resize-handle')) return;
     this.focusWindow(id);
     titlebar.classList.add('dragging');
     const rect = w.el.getBoundingClientRect();
@@ -1252,12 +1253,21 @@ const Win7 = {
   _fitTerminal() {
     if (!this.terminalAttached) return;
     try {
-      if (window.__getSessions && window.__getActiveId) {
-        const s = window.__getSessions()[window.__getActiveId()];
-        if (s && s.term && s.fitAddon) {
-          s.fitAddon.fit();
+      requestAnimationFrame(() => {
+        if (window.__getSessions) {
+          const sessions = window.__getSessions();
+          const activeId = window.__getActiveId ? window.__getActiveId() : null;
+          for (const [id, s] of Object.entries(sessions)) {
+            if (s && s.term && s.fitAddon) {
+              try { s.fitAddon.fit(); } catch {}
+              try {
+                const cols = s.term.cols, rows = s.term.rows;
+                if (window.send && cols && rows) window.send({ type: 'resize', id, cols, rows });
+              } catch {}
+            }
+          }
         }
-      }
+      });
     } catch {}
   },
 
@@ -1582,8 +1592,12 @@ document.addEventListener('click', () => Win7.hideContextMenu());
 /* Window drag/resize */
 document.getElementById('win7-windows-container').addEventListener('mousedown', (e) => {
   if (!Win7.active) return;
+  if (e.target.closest('.win7-win-resize-handle')) {
+    Win7._startResize(e);
+    e.stopPropagation();
+    return;
+  }
   Win7._startDrag(e);
-  if (!e.target.closest('.win7-win-btn')) Win7._startResize(e);
 });
 
 /* Desktop drag selection */
