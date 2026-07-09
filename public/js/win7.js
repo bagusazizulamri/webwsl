@@ -898,7 +898,7 @@ const Win7 = {
       case 'terminal':
         this.createWindow({
           id: 'terminal', title: 'Terminal - WebWSL', icon: '\u26A1', width: 720, height: 420,
-          content: '<div id="win7-term-container" style="height:100%;padding:4px;display:flex;flex-direction:column"></div>',
+          content: '<div id="win7-term-container"></div>',
           onClose: () => { this.terminalAttached = false; },
         });
         setTimeout(() => this._attachTerminal(), 50);
@@ -1222,13 +1222,17 @@ const Win7 = {
       if (edge.includes('n')) { height = Math.max(120, d.rect.height - dy); top = d.rect.top + d.rect.height - height; }
       w.el.style.cssText = 'left:' + left + 'px;top:' + top + 'px;width:' + width + 'px;height:' + height + 'px;right:;bottom:;z-index:' + this.windowZIndex;
       if (!w.normalRect) w.normalRect = { width: d.rect.width + 'px', height: d.rect.height + 'px', left: d.rect.left + 'px', top: d.rect.top + 'px' };
-      if (id === 'terminal') this._fitTerminal();
+      if (id === 'terminal') this._forceTerminalResize();
     };
     const onUp = () => {
       document.removeEventListener('mousemove', onMove);
       document.removeEventListener('mouseup', onUp);
       this.resizeData = null;
-      if (id === 'terminal') this._fitTerminal();
+      if (id === 'terminal') {
+        this._forceTerminalResize();
+        setTimeout(() => this._forceTerminalResize(), 80);
+        setTimeout(() => this._forceTerminalResize(), 250);
+      }
     };
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup', onUp);
@@ -1250,25 +1254,40 @@ const Win7 = {
   _playSound(name) { try { if (window.AudioContext) { const ctx = new (window.AudioContext || window.webkitAudioContext)(); const o = ctx.createOscillator(); const g = ctx.createGain(); g.gain.value = 0.03; o.connect(g); g.connect(ctx.destination); o.frequency.value = name === 'startup' ? 800 : name === 'shutdown' ? 400 : name === 'close' ? 600 : 700; o.start(); o.stop(ctx.currentTime + 0.04); } } catch {} },
 
   /* ═══ TERMINAL ═══ */
+  _forceTerminalResize() {
+    const container = document.getElementById('win7-term-container');
+    if (!container) return;
+    void container.offsetHeight;
+    const rect = container.getBoundingClientRect();
+    const pad = 8;
+    const w = rect.width - pad, h = rect.height - pad;
+    if (w < 50 || h < 20) return;
+    const monospace = document.createElement('canvas');
+    const ctx = monospace.getContext('2d');
+    ctx.font = '14px "Fira Code","Cascadia Code","Consolas",monospace';
+    const cw = ctx.measureText('W').width || 9.2;
+    const ch = 18;
+    const cols = Math.max(10, Math.floor(w / cw));
+    const rows = Math.max(3, Math.floor(h / ch));
+    if (window.__getSessions) {
+      const sessions = window.__getSessions();
+      for (const [id, s] of Object.entries(sessions)) {
+        if (s && s.term) {
+          try {
+            s.term.resize(cols, rows);
+            if (s.fitAddon) s.fitAddon.fit();
+          } catch {}
+          try {
+            if (window.send) window.send({ type: 'resize', id, cols: s.term.cols, rows: s.term.rows });
+          } catch {}
+        }
+      }
+    }
+  },
+
   _fitTerminal() {
     if (!this.terminalAttached) return;
-    try {
-      requestAnimationFrame(() => {
-        if (window.__getSessions) {
-          const sessions = window.__getSessions();
-          const activeId = window.__getActiveId ? window.__getActiveId() : null;
-          for (const [id, s] of Object.entries(sessions)) {
-            if (s && s.term && s.fitAddon) {
-              try { s.fitAddon.fit(); } catch {}
-              try {
-                const cols = s.term.cols, rows = s.term.rows;
-                if (window.send && cols && rows) window.send({ type: 'resize', id, cols, rows });
-              } catch {}
-            }
-          }
-        }
-      });
-    } catch {}
+    this._forceTerminalResize();
   },
 
   _attachTerminal() {
@@ -1280,7 +1299,8 @@ const Win7 = {
       while (container.firstChild) container.removeChild(container.firstChild);
       for (const child of termEl.children) container.appendChild(child);
       this.terminalAttached = true;
-      setTimeout(() => this._fitTerminal(), 50);
+      setTimeout(() => this._forceTerminalResize(), 50);
+      setTimeout(() => this._forceTerminalResize(), 200);
     }
   },
 

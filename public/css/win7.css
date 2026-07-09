@@ -693,6 +693,7 @@
 }
 .win7-cp-item:hover { background: rgba(0,120,215,0.03); }
 
+#win7-term-container { height: 100%; padding: 4px; }
 #win7-term-container .xterm { height: 100%; }
 #win7-term-container .xterm-viewport { overflow-y: auto !important; }
 #win7-term-container .xterm-screen { width: 100% !important; }
