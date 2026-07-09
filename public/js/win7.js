@@ -1221,8 +1221,14 @@ const Win7 = {
       if (edge.includes('n')) { height = Math.max(120, d.rect.height - dy); top = d.rect.top + d.rect.height - height; }
       w.el.style.cssText = 'left:' + left + 'px;top:' + top + 'px;width:' + width + 'px;height:' + height + 'px;right:;bottom:;z-index:' + this.windowZIndex;
       if (!w.normalRect) w.normalRect = { width: d.rect.width + 'px', height: d.rect.height + 'px', left: d.rect.left + 'px', top: d.rect.top + 'px' };
+      if (id === 'terminal') this._fitTerminal();
     };
-    const onUp = () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); this.resizeData = null; };
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      this.resizeData = null;
+      if (id === 'terminal') this._fitTerminal();
+    };
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup', onUp);
   },
@@ -1243,6 +1249,18 @@ const Win7 = {
   _playSound(name) { try { if (window.AudioContext) { const ctx = new (window.AudioContext || window.webkitAudioContext)(); const o = ctx.createOscillator(); const g = ctx.createGain(); g.gain.value = 0.03; o.connect(g); g.connect(ctx.destination); o.frequency.value = name === 'startup' ? 800 : name === 'shutdown' ? 400 : name === 'close' ? 600 : 700; o.start(); o.stop(ctx.currentTime + 0.04); } } catch {} },
 
   /* ═══ TERMINAL ═══ */
+  _fitTerminal() {
+    if (!this.terminalAttached) return;
+    try {
+      if (window.__getSessions && window.__getActiveId) {
+        const s = window.__getSessions()[window.__getActiveId()];
+        if (s && s.term && s.fitAddon) {
+          s.fitAddon.fit();
+        }
+      }
+    } catch {}
+  },
+
   _attachTerminal() {
     if (this.terminalAttached) return;
     const container = document.getElementById('win7-term-container');
@@ -1252,6 +1270,7 @@ const Win7 = {
       while (container.firstChild) container.removeChild(container.firstChild);
       for (const child of termEl.children) container.appendChild(child);
       this.terminalAttached = true;
+      setTimeout(() => this._fitTerminal(), 50);
     }
   },
 
